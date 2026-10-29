@@ -2,7 +2,7 @@ using HarmonyLib;
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(Leopard2A7V.LpMod), "Leopard2A7V", "0.1.0", "local build")]
+[assembly: MelonInfo(typeof(Leopard2A7V.LpMod), "Leopard2A7V", "0.1.1", "rhino2024")]
 [assembly: MelonGame("Radian Simulations LLC", "GHPC")]
 
 namespace Leopard2A7V

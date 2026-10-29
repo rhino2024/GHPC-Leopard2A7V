@@ -1,0 +1,97 @@
+# Material assignments for the imported Leopard 2A7V art. The names have to match the usemtl lines
+# in Leopard2A7V.obj; the maps are the War Thunder DDS set re-dressed by ModSources/tools/lp_texpass.py
+# so the painted surfaces carry GHPC's own tone, band contrast, normal strength and gloss distribution
+# (measured against the donor LEO2_co/_nm/_sm/_ao). map_ks is gloss-in-alpha, built from the diffuse's
+# per-part material mask, which the export has but never referenced.
+# net_f and net_j are deliberately absent - the turret camo netting is dropped by the parser.
+
+newmtl leopard_2a7v_body_ger_camo_bronzegruen
+Kd 1.000 1.000 1.000
+Ks 0.502 0.502 0.502
+Ns 30
+map_Kd textures/leo2a7v_body_c.png
+map_normal textures/leo2a7v_body_n.png
+map_ao textures/leo2a7v_body_ao.png
+map_ks textures/leo2a7v_body_sm.png
+
+newmtl leopard_2a7v_turret_ger_camo_bronzegruen
+Kd 1.000 1.000 1.000
+Ks 0.502 0.502 0.502
+Ns 30
+map_Kd textures/leo2a7v_turret_c.png
+map_normal textures/leo2a7v_turret_n.png
+map_ao textures/leo2a7v_turret_ao.png
+map_ks textures/leo2a7v_turret_sm.png
+
+newmtl leopard_2a7v_gun_ger_camo_bronzegruen
+Kd 1.000 1.000 1.000
+Ks 0.502 0.502 0.502
+Ns 30
+map_Kd textures/leo2a7v_gun_c.png
+map_normal textures/leo2a7v_gun_n.png
+map_ao textures/leo2a7v_gun_ao.png
+map_ks textures/leo2a7v_gun_sm.png
+
+newmtl ger_leopard_2a4_track
+Kd 1.000 1.000 1.000
+Ks 0.502 0.502 0.502
+Ns 30
+map_Kd textures/leo2a4_track_c.png
+map_normal textures/leo2a4_track_n.png
+map_ao textures/leo2a4_track_ao.png
+
+# ger_leopard_2a5_phys_track is War Thunder's mass proxy for the track, welded 6 mm onto the inside of both
+# side skirts (ex_armor_l/r_16). It is collision art, not visible art: left in, it draws a strip of track
+# texture across the skirts a few millimetres from the hull skin, which reads as a panel of the wrong shade
+# and z-fights at grazing angles. Its faces are dropped by the importer as an unlisted material.
+
+
+map_ks textures/leo2a4_track_sm.png
+newmtl mg_mount_leopard_2a7v_ger_camo_bronzegruen
+Kd 1.000 1.000 1.000
+Ks 0.502 0.502 0.502
+Ns 30
+map_Kd textures/leo2a7v_mg_mount_c.png
+map_normal textures/leo2a7v_mg_mount_n.png
+map_ao textures/leo2a7v_mg_mount_ao.png
+map_ks textures/leo2a7v_mg_mount_sm.png
+
+newmtl mg_mg_42
+Kd 1.000 1.000 1.000
+Ks 0.502 0.502 0.502
+Ns 30
+map_Kd textures/mg_42_c.png
+map_normal textures/mg_42_n.png
+map_ao textures/mg_42_ao.png
+
+map_ks textures/mg_42_sm.png
+newmtl mg_browning_m2hb_ammo
+Kd 1.000 1.000 1.000
+Ks 0.502 0.502 0.502
+Ns 30
+map_Kd textures/m2hb_ammo_c.png
+map_normal textures/m2hb_ammo_n.png
+map_ao textures/m2hb_ammo_ao.png
+
+map_ks textures/m2hb_ammo_sm.png
+newmtl smooth_barrel_a_smooth_barrel_a
+Kd 1.000 1.000 1.000
+Ks 0.502 0.502 0.502
+Ns 30
+map_Kd textures/smooth_barrel_c.png
+map_normal textures/smooth_barrel_n.png
+
+map_ks textures/smooth_barrel_sm.png
+newmtl headlight_glass
+Kd 1.000 1.000 1.000
+Ks 0.502 0.502 0.502
+Ns 30
+map_Kd textures/headlight_glass_c.png
+map_normal textures/headlight_glass_n.png
+
+map_ks textures/headlight_glass_sm.png
+newmtl us_turret_glass
+Kd 1.000 1.000 1.000
+Ks 0.502 0.502 0.502
+Ns 30
+map_Kd textures/turret_glass_c.png

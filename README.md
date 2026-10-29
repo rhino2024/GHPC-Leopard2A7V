@@ -2,6 +2,8 @@
 
 Gunner, HEAT, PC! 的 MelonLoader 模组。以本体里的 `LEO2A3` 为供体，新增一辆豹 2A7V：外观换成 2A7V 的车体与炮塔，挂到供体那套 `leo2_rig` 骨骼上，供体原车的模型整个藏起来，履带仍用供体那套蒙皮履带按实测节距滚动。弹药、主炮行程、车顶机枪、昼间分划板都按这辆车重新标定。
 
+模型、材质和 37 张贴图都是本模组自己的东西，随仓库（`assets/Leopard2A7V/`）和发布包一起提供，不用另找。
+
 ## 你会看到什么
 
 - 载具列表里多一辆 **Leopard 2A7V**（内部 key `LEO2A7V`）。它是从 `LEO2A3` 克隆出来的，所以装甲布局、悬挂、乘员位、瞄具机位都沿用供体，换掉的只是外观和武器参数。
@@ -11,32 +13,36 @@ Gunner, HEAT, PC! 的 MelonLoader 模组。以本体里的 `LEO2A3` 为供体，
 - 车顶那挺 MG3 变成真武器：能切进它的镜，能开火，「下一件武器」里轮得到，射速和声音沿用供体那挺 7.62（1200 rpm），弹链箱在模型上。
 - 炮手昼间镜里画的是 2A7V 的分划板，倍率档与分划抬落仍由游戏自己的火控驱动。
 
-## 模型数据要自备
-
-模型（`Leopard2A7V.obj`）、材质（`Leopard2A7V.mtl`）和 `textures/` 里的贴图**不在发布包里**，仓库里也不含。它们是别人的美术资产，版权不归我，我只做转换与标定，所以不随包分发——发布包里只有 `Bin/Mods/Leopard2A7V.dll` 和这份说明。
-
-要跑起来，得按下面这个结构自己放一套：
-
-```
-<游戏目录>/Bin/Mods/Leopard2A7V/
-    Leopard2A7V.obj      # 单个 OBJ，顶点权重可选
-    Leopard2A7V.mtl      # 每个贴图通道一条材质
-    textures/            # MTL 里引用的贴图
-```
-
-- 这几个文件名是写死的，不能改；`textures/` 这个目录名也是。
-- 贴图走 Unity 的 `ImageConversion.LoadImage`，PNG / JPG 都读得了，DDS 读不了。
-- MTL 里的路径按相对 `Leopard2A7V/` 解析。
-- 缺文件会在日志里打印 `asset folder missing: <路径>` 然后跳过加载——那就是位置、文件名或贴图目录不对。
-
 ## 装
 
 1. 先彻底退出游戏。游戏开着的时候 `Bin\Mods\*.dll` 是锁住的，覆盖不了。
-2. 把 zip 解压到游戏根目录，也就是放着 `GHPC.exe` 的那一层。解出来应该看到 `Bin\Mods\Leopard2A7V.dll`。
-3. 照上一节把模型数据放进 `Bin\Mods\Leopard2A7V\`。
-4. 开一次游戏。MelonLoader 会在 `Bin\UserData\MelonPreferences.cfg` 里写出 `[Leopard2A7V]` 这一段。
+2. 把 zip 解压到游戏根目录，也就是放着 `GHPC.exe` 的那一层。解出来应该是：
 
-需要 MelonLoader 0.7.x。本体里必须有 `LEO2A3`：注册、克隆、弹药模板全靠它。删掉 dll 和那个素材目录就算卸载。
+   ```
+   Bin\Mods\Leopard2A7V.dll
+   Bin\Mods\Leopard2A7V\Leopard2A7V.obj
+   Bin\Mods\Leopard2A7V\Leopard2A7V.mtl
+   Bin\Mods\Leopard2A7V\textures\        （37 张图）
+   ```
+
+3. 开一次游戏。MelonLoader 会在 `Bin\UserData\MelonPreferences.cfg` 里写出 `[Leopard2A7V]` 这一段。
+
+需要 MelonLoader 0.7.x。本体里必须有 `LEO2A3`：注册、克隆、弹药模板全靠它。进地图编辑器，在载具列表里按显示名「Leopard 2A7V」找。删掉 dll 和 `Bin\Mods\Leopard2A7V\` 这个目录就算卸载。
+
+## 素材
+
+发布包里那套模型是自制资产，不依赖任何外部下载：
+
+```
+assets/Leopard2A7V/          # 仓库里的原件
+    Leopard2A7V.obj          # 单个 OBJ，顶点权重可选
+    Leopard2A7V.mtl          # 每个贴图通道一条材质
+    textures/                # 37 张 PNG
+```
+
+装好之后它们应该在 `Bin\Mods\Leopard2A7V\`，目录名和这三个文件名都是写死的，不能改。贴图走 Unity 的 `ImageConversion.LoadImage`，PNG / JPG 都读得了，DDS 读不了。`MaxTextureSize` 默认 2048，显存紧就降到 1024。
+
+改过素材的话，`.mtl` 里的路径按相对 `Leopard2A7V\` 解析，贴图可以整批替换。
 
 ## 能改的东西
 
@@ -88,8 +94,8 @@ dotnet build -c Release -p:GameDir="E:/SteamLibrary/steamapps/common/Gunner HEAT
 
 ## In English
 
-A Leopard 2A7V for GHPC, cloned from the vanilla `LEO2A3` so that armor, suspension, crew stations and optic slots stay the donor's own while the art, the gun codex, the round, the elevation arc, the roof machine gun and the gunner's daylight reticle become this vehicle's. The main gun is renamed `Rh-120 L/55` and fires `DM53 APFSDS-T`, built at runtime from the donor's AP round so that it carries the L/55's muzzle velocity and 653 mm of penetration through the game's own ballistic model; the mission customiser's ammunition row is removed for this vehicle, which therefore spawns on its own list. Elevation is limited to −9/+20 for the gun and −10/+75 for the roof MG, and that MG is a real weapon with its own sight, fire control and 1200 rpm sound. The vehicle model, material and textures are **not** included: they are third-party art, so the release carries only `Bin/Mods/Leopard2A7V.dll` plus this file, and you supply your own `Leopard2A7V.obj` / `.mtl` / `textures/` set under `Bin/Mods/Leopard2A7V/` (those names are hard-coded). The arcs, the tread pitch and the sight magnification were measured offline and still want in-game confirmation. MIT for the code, which is unrelated to Radian Simulations.
+A Leopard 2A7V for GHPC, cloned from the vanilla `LEO2A3` so that armor, suspension, crew stations and optic slots stay the donor's own while the art, the gun codex, the round, the elevation arc, the roof machine gun and the gunner's daylight reticle become this vehicle's. The main gun is renamed `Rh-120 L/55` and fires `DM53 APFSDS-T`, built at runtime from the donor's AP round so that it carries the L/55's muzzle velocity and 653 mm of penetration through the game's own ballistic model; the mission customiser's ammunition row is removed for this vehicle, which therefore spawns on its own list. Elevation is limited to −9/+20 for the gun and −10/+75 for the roof MG, and that MG is a real weapon with its own sight, fire control and 1200 rpm sound. The vehicle model, its material and the 37 textures are this mod's own art and ship with both the repository (`assets/Leopard2A7V/`) and the release archive, so unzipping to the game root is all the setup there is. The arcs, the tread pitch and the sight magnification were measured offline and still want in-game confirmation. MIT, unrelated to Radian Simulations.
 
-## 素材与授权
+## 授权
 
-代码 MIT，见 `LICENSE`。模型、贴图、分划板图样来自 War Thunder 的导出资产，版权归原主，不随本包分发，也不在本仓库里；要自己跑，请自备一套。本模组与 Radian Simulations 无关。在当前 Steam 版上实测过，游戏更新有可能让它失效。
+代码、模型、材质与贴图都是本模组自己的作品，一起按 MIT 授权，见 `LICENSE`。本模组与 Radian Simulations 无关。在当前 Steam 版上实测过，游戏更新有可能让它失效。

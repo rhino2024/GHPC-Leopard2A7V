@@ -6,3 +6,8 @@
 *.md    text
 *.txt   text
 LICENSE text
+
+# vehicle art payload: never normalise, never diff
+*.png   binary
+*.obj   binary
+*.dll   binary
