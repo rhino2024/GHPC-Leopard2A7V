@@ -88,12 +88,6 @@ namespace Leopard2A7V
         /// </summary>
         private static readonly string[] TurretKeys = { "bone_turret" };
 
-        /// <summary>
-        /// Named parts that carry the turret or gun material in the atlas but belong to the hull, which
-        /// is the only way to tell them apart from the turret appliqué beside them.
-        /// </summary>
-        private static readonly string[] HullKeys = { "roll_engine" };
-
         public static void Preload(string directory)
         {
             Task.Run(() =>
@@ -128,8 +122,6 @@ namespace Leopard2A7V
                 if (n.Contains(key)) return LpGroup.CommanderGear;
             foreach (string key in TurretKeys)
                 if (n.Contains(key)) return LpGroup.Turret;
-            foreach (string key in HullKeys)
-                if (n.Contains(key)) return LpGroup.Hull;
 
             string m = materialName == null ? string.Empty : materialName.ToLowerInvariant();
             if (m.Contains("turret_ger_camo")) return LpGroup.Turret;

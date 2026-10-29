@@ -40,15 +40,8 @@ namespace Leopard2A7V
         private static AmmoType _shell;
         private static AmmoCodexScriptable _codex;
         private static AmmoClipCodexScriptable _clip;
-        private static AmmoClipCodexScriptable _donorAp;
         private static WeaponSystemCodexScriptable _gunCodex;
         private static bool _failed;
-
-        /// <summary>The imported round, or null while nothing has asked for it yet.</summary>
-        public static AmmoClipCodexScriptable RoundOrNull => _clip;
-
-        /// <summary>The donor's own APFSDS clip the imported round was copied from.</summary>
-        public static AmmoClipCodexScriptable DonorApClip => _donorAp;
 
         /// <summary>
         /// Switches on each spawned copy of the imported round visual. The template is kept inactive so it
@@ -180,10 +173,9 @@ namespace Leopard2A7V
         }
 
         /// <summary>
-        /// The imported round, built the first time anything asks for it and shared from then on. The mission
-        /// customizer asks while still in the menu, so this cannot assume a unit has been spawned.
+        /// The imported round, built the first time a vehicle carrying it is spawned and shared from then on.
         /// </summary>
-        public static AmmoClipCodexScriptable EnsureClip(AmmoClipCodexScriptable donorApClip)
+        private static AmmoClipCodexScriptable EnsureClip(AmmoClipCodexScriptable donorApClip)
         {
             if (_failed || donorApClip == null) return null;
             if (_clip != null)
@@ -197,9 +189,8 @@ namespace Leopard2A7V
 
         /// <summary>
         /// Attaches the in-rack shell model if the round was built before that prefab had been loaded, which
-        /// is what happens when the mission customizer asks for the round first. The clip the panel was
-        /// handed is the one the vehicle carries, so the visual has to come onto that same object rather
-        /// than replace it.
+        /// is what happens on a later spawn in the same session. The donor clip the new vehicle carries is
+        /// the source of the visual, so it has to come onto the shared round's own shell object.
         /// </summary>
         private static void EnsureVisual(AmmoClipCodexScriptable donorApClip)
         {
@@ -211,7 +202,7 @@ namespace Leopard2A7V
 
             AttachVisual(source);
             MelonLogger.Msg("[L2A7V] the imported round's rack visual reached the game after the round was " +
-                            "built, so it is on the same clip the mission customizer offers");
+                            "built, so it is now attached to the shared round");
         }
 
         private static void AttachVisual(AmmoType source)
@@ -292,7 +283,6 @@ namespace Leopard2A7V
             _shell = shell;
             _codex = codex;
             _clip = clip;
-            _donorAp = donorClip;
 
             if (source.VisualModel != null) AttachVisual(source);
 

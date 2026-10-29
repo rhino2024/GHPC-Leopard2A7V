@@ -1,108 +1,95 @@
-# Leopard 2A7V for GHPC
+# 豹 2A7V
 
-A MelonLoader mod that replaces the in-game Leopard 2A4-style hull/turret appearance with a
-Leopard 2A7V vehicle model, re-rigged onto the donor unit's skeleton, plus its own ammunition,
-gun elevation limits, roof-mounted machine gun and daylight reticle.
+Gunner, HEAT, PC! 的 MelonLoader 模组。以本体里的 `LEO2A3` 为供体，新增一辆豹 2A7V：外观换成 2A7V 的车体与炮塔，挂到供体那套 `leo2_rig` 骨骼上，供体原车的模型整个藏起来，履带仍用供体那套蒙皮履带按实测节距滚动。弹药、主炮行程、车顶机枪、昼间分划板都按这辆车重新标定。
 
-Runs on **GHPC** (Radian Simulations) with **MelonLoader** and the base game's
-`LEO2A3` unit present (that is the donor the mod builds on).
+## 你会看到什么
 
-## What is not in this repository
+- 载具列表里多一辆 **Leopard 2A7V**（内部 key `LEO2A7V`）。它是从 `LEO2A3` 克隆出来的，所以装甲布局、悬挂、乘员位、瞄具机位都沿用供体，换掉的只是外观和武器参数。
+- 主炮改称 **Rh-120 L/55**，弹种是 **DM53 APFSDS-T**：以游戏自己的 AP 弹为模板在运行时复制一份，换上 L/55 的炮口初速与 653 mm 穿深，弹道仍走游戏原本那套飞行模型。
+- 行动前的弹药下拉里，这辆车**不会出现**。游戏那个面板是按供体的弹药清单建行的，认不出运行时造出来的弹种，只会把供体那两种旧弹摆在本车名字下面；模组把这几行整个拿掉，车就按自己那份清单出生——默认装 DM53。任务里想换弹，用炮塔里的弹架转移界面。
+- 主炮行程 **−9 / +20**，车顶机枪 **−10 / +75**。数字按这辆车自己的页面写，不是照供体的 −10 / +20 抄，所以炮管不会比真车多压一度。
+- 车顶那挺 MG3 变成真武器：能切进它的镜，能开火，「下一件武器」里轮得到，射速和声音沿用供体那挺 7.62（1200 rpm），弹链箱在模型上。
+- 炮手昼间镜里画的是 2A7V 的分划板，倍率档与分划抬落仍由游戏自己的火控驱动。
 
-The vehicle model data — `Leopard2A7V.obj`, `Leopard2A7V.mtl` and the `textures/` folder — is
-**not committed**. The tracked source only contains the C# that loads, converts and drives it.
-To run the mod you must supply your own converted model set in the expected format:
+## 模型数据要自备
 
-```
-<game>/Bin/Mods/Leopard2A7V/
-    Leopard2A7V.obj          # single OBJ, skinned weights optional
-    Leopard2A7V.mtl          # one material per texture channel
-    textures/                # DDS maps referenced by the MTL
-```
+模型（`Leopard2A7V.obj`）、材质（`Leopard2A7V.mtl`）和 `textures/` 里的贴图**不在发布包里**，仓库里也不含。它们是别人的美术资产，版权不归我，我只做转换与标定，所以不随包分发——发布包里只有 `Bin/Mods/Leopard2A7V.dll` 和这份说明。
 
-`ObjModel.Preload` reads exactly those filenames, so a folder without them makes the mod log
-`asset folder missing` and skip loading.
-
-## Build
+要跑起来，得按下面这个结构自己放一套：
 
 ```
-dotnet build -c Release -p:GameDir="D:/Steam/steamapps/common/Gunner HEAT PC/Bin"
+<游戏目录>/Bin/Mods/Leopard2A7V/
+    Leopard2A7V.obj      # 单个 OBJ，顶点权重可选
+    Leopard2A7V.mtl      # 每个贴图通道一条材质
+    textures/            # MTL 里引用的贴图
 ```
 
-`GameDir` points at the game's `Bin` folder; the project resolves `Assembly-CSharp`,
-MelonLoader, Harmony and the Unity modules from there. Without `-p:GameDir=` it falls back to
-the path baked into `Leopard2A7V.csproj`. Output: `bin/Release/Leopard2A7V.dll`.
+- 这几个文件名是写死的，不能改；`textures/` 这个目录名也是。
+- 贴图走 Unity 的 `ImageConversion.LoadImage`，PNG / JPG 都读得了，DDS 读不了。
+- MTL 里的路径按相对 `Leopard2A7V/` 解析。
+- 缺文件会在日志里打印 `asset folder missing: <路径>` 然后跳过加载——那就是位置、文件名或贴图目录不对。
 
-## Install
+## 装
 
-1. Copy `bin/Release/Leopard2A7V.dll` to `<game>/Bin/Mods/Leopard2A7V.dll`.
-2. Put the model data described above into `<game>/Bin/Mods/Leopard2A7V/`.
-3. Start the game; the mod registers the unit on every scene load and prints `[L2A7V]` lines
-   in `Bin/MelonLoader/Logs/Latest.log`.
+1. 先彻底退出游戏。游戏开着的时候 `Bin\Mods\*.dll` 是锁住的，覆盖不了。
+2. 把 zip 解压到游戏根目录，也就是放着 `GHPC.exe` 的那一层。解出来应该看到 `Bin\Mods\Leopard2A7V.dll`。
+3. 照上一节把模型数据放进 `Bin\Mods\Leopard2A7V\`。
+4. 开一次游戏。MelonLoader 会在 `Bin\UserData\MelonPreferences.cfg` 里写出 `[Leopard2A7V]` 这一段。
 
-## Ammunition
+需要 MelonLoader 0.7.x。本体里必须有 `LEO2A3`：注册、克隆、弹药模板全靠它。删掉 dll 和那个素材目录就算卸载。
 
-The 2A7V's own APFSDS round is built at runtime as a copy of the donor's AP shell with the
-2A7V's ballistics, so it is not a game asset. The mod clones the mission customizer's 120 mm AP
-logistics set and puts its own round first, which means:
+## 能改的东西
 
-- the round is selectable **before** the mission, in the flex-mission ammunition dropdown;
-- leaving the dropdown untouched loads the 2A7V's shell instead of the donor's default;
-- the donor's original options stay listed after it, and HEAT/HE and the in-mission rack
-  behaviour are unchanged.
+全在 `Bin\UserData\MelonPreferences.cfg` 的 `[Leopard2A7V]` 段。这个文件是所有模组共用的一个，游戏退出时才写盘。
 
-Campaign sorties ignore mission-customizer overrides, so the round is not offered there yet.
-
-## Configuration
-
-`MelonLoader/Leopard2A7V.cfg` (created on first run). Everything is optional; the defaults are
-what the mod was tuned with.
-
-| Entry | Default | Purpose |
+| 名字 | 默认 | 作用 |
 | --- | --- | --- |
-| `Enabled` | `true` | master switch |
-| `SourceUnitKey` | `LEO2A3` | donor unit cloned and re-skinned |
-| `FriendlyName` | `Leopard 2A7V` | display name |
-| `ConvertSourceUnit` | `false` | also convert the donor unit itself |
-| `UseDonorRunningGear` | `false` | keep donor road wheels instead of the model's |
-| `UseDonorTrackArt` | `true` | roll the donor's skinned track mesh |
-| `TrackTreadsPerMetre` | `0.746` | track scroll speed for the donor's tread pitch |
-| `ApplyArmor` / `LogArmor` | `false` / `true` | write model armor layers, or only report them |
-| `VisualOffset` | `0,0,0.336` | model-space correction between prefab and unit frames |
-| `ModelTurretAxis` | `0,1.620,0.403` | turret trunnion in model space |
-| `ModelGunAxis` | `0.003,1.969,1.369` | gun elevation axis in model space |
-| `CommanderViewOffset` | `0,0,0` | nudge the commander's external camera |
-| `MaxTextureSize` | `2048` | downscale imported maps |
-| `AlbedoLuminance` | `0` | shift albedo toward grey (`0` = keep) |
-| `PaintMaskLevel` / `SmoothnessLevel` | `255` / `63` | gloss/mask channel handling |
-| `NeutralMaps` | `true` | synthesize missing normal/detail maps |
-| `UseDetailMaps` | `true` | bind the model's detail layer |
-| `AddHeatSource` | `false` | give the vehicle a heat signature source |
-| `ReplaceDayReticle` | `true` | draw the 2A7V graticule in the daylight gunner sight |
-| `LimitMainGunElevation` | `true` | apply the arc below |
-| `GunElevationDegrees` / `GunDepressionDegrees` | `20` / `-9` | main gun travel |
-| `AddRoofGun` | `true` | make the roof MG a usable weapon |
-| `RoofGunYawPoint` / `RoofGunTrunnion` / `RoofGunMuzzle` | see cfg | roof MG geometry in model space |
-| `RoofGunSight` / `RoofGunSightFov` | `-0.90,2.92,-0.60` / `20` | roof MG sight camera |
-| `DumpMaterials` | `true` | log the model's material list at load |
+| Enabled | true | 总开关 |
+| SourceUnitKey | LEO2A3 | 拿来克隆的供体单位 |
+| FriendlyName | Leopard 2A7V | 界面上显示的名字 |
+| ConvertSourceUnit | false | 连本体原本的 LEO2A3 一起换皮 |
+| UseDonorRunningGear | false | 用供体自己的负重轮，不建模型里的那些 |
+| UseDonorTrackArt | true | 用供体那套蒙皮履带（唯一能正常滚动的选项） |
+| ApplyArmor / LogArmor | false / true | 是否改写装甲数值／只把每层打到日志里 |
+| MaxTextureSize | 2048 | 导入贴图的最大边长，显存紧就降到 1024 |
+| AlbedoLuminance | 0 | 把导入的反照率往灰色带拉，0 = 原样 |
+| NeutralMaps | true | 用中性色替换供体的涂装遮罩与光泽图 |
+| UseDetailMaps | true | 绑模型自带的 AO 烘焙 |
+| ReplaceDayReticle | true | 炮手昼间镜换 2A7V 分划板 |
+| LimitMainGunElevation | true | 是否限制主炮行程 |
+| GunElevationDegrees / GunDepressionDegrees | 20 / −9 | 上面那个行程的两头 |
+| AddRoofGun | true | 把车顶那挺做成可用武器 |
+| RoofGunSightFov | 20 | 车顶机枪镜的视场（水平度） |
+| DumpMaterials | true | 建完外观后把材质与渲染器状态打一遍日志 |
 
-## Layout
+还有一组模型空间锚点（`VisualOffset`、`ModelTurretAxis`、`ModelGunAxis`、`CommanderViewOffset`、`RoofGunYawPoint`、`RoofGunTrunnion`、`RoofGunMuzzle`、`RoofGunSight`、`RoofGunRack`），换一套模型时才需要动，每一项在代码里都写了是怎么量出来的。
 
-| File | Role |
-| --- | --- |
-| `Main.cs` | Melon entry point, preference creation, asset preload, patch install |
-| `LpConfig.cs` | every tunable, with defaults |
-| `LpPatches.cs` | Harmony patch registration |
-| `LpTemplate.cs`, `LpUnitRegistry.cs` | clone the donor unit into a new prefab and register it |
-| `ObjModel.cs`, `LpAssets.cs` | OBJ/MTL/DDS parser and runtime material/texture building |
-| `LpVisual.cs`, `LpBaseRig.cs` | attach the art to the donor skeleton, hide donor art |
-| `LpRunningGear.cs`, `LpTracks.cs` | road-wheel / torsion-bar animation and track scrolling |
-| `LpSightView.cs`, `LpReticle.cs` | sight camera slots, magnification steps, graticule drawing |
-| `LpWeapons.cs`, `LpAmmoMenu.cs`, `LpRoofGun.cs` | ammunition, pre-mission ammo row, roof MG |
-| `LpArmorLog.cs`, `LpDiagnostics.cs`, `LpDebug.cs` | offline verification and console helpers |
+**已经存档的值优先级高于代码里的新默认值。** 换过 DLL 之后要回头核对 `GunElevationDegrees = 20.0` / `GunDepressionDegrees = -9.0` 这两行还是不是你想要的。
 
-## Status
+## 先说清楚
 
-Actively developed; the model conversion, rig attachment and ammunition paths are working, while
-some geometry alignment (mantlet offset, suspension seating) is still being measured against the
-log output. Expect tuning to move.
+- 战役模式的 sortie 不读任务自定义器的覆盖，所以这辆车在战役里用的是它自己那份弹药清单，行动前的弹种选择本来也没有。
+- 供体身上那三张伪装网剥不掉（隐藏白名单里的瞄具豁免会吞到炮塔骨），进场景能直接看到。
+- 主炮 −9 / +20、车顶机枪 −10 / +75、供体履带节距、炮手镜倍率都是离线量出来或读表的，还没逐条进游戏核对。有偏差就改上面那几个数字，不用改代码。
+- 同一会话里第二次生成整车，早先会变品红（任务结束卸载 bundle 后材质 shader 指针悬空）。已按 shader 名重抓模板并原地修缓存，但仍需复验。
+- 只换这一辆车的皮，不改别的载具，也不碰游戏的存档和资源文件。
+
+## 想自己编译
+
+需要 .NET SDK（目标框架 net472，本机用的是 .NET 10 的 SDK）：
+
+```bash
+dotnet build -c Release -p:GameDir="E:/SteamLibrary/steamapps/common/Gunner HEAT PC/Bin"
+```
+
+`GameDir` 指到游戏的 `Bin` 目录，不是游戏根目录：MelonLoader、0Harmony 和 `GHPC_Data\Managed\*.dll` 这十一项引用都从那里解析，所以编译机上也得有一份装好 MelonLoader 的 GHPC。不给 `-p:GameDir=` 就用 `Leopard2A7V.csproj` 里写的默认值。产物在 `src/Leopard2A7V/bin/Release/Leopard2A7V.dll`，替换 `Bin\Mods\Leopard2A7V.dll` 之前先确认游戏进程数为 0。
+
+`LpSightData.cs` 是昼间分划的线段表（mrad 端点），`LpConfig.cs` 是所有可调项的注册处。
+
+## In English
+
+A Leopard 2A7V for GHPC, cloned from the vanilla `LEO2A3` so that armor, suspension, crew stations and optic slots stay the donor's own while the art, the gun codex, the round, the elevation arc, the roof machine gun and the gunner's daylight reticle become this vehicle's. The main gun is renamed `Rh-120 L/55` and fires `DM53 APFSDS-T`, built at runtime from the donor's AP round so that it carries the L/55's muzzle velocity and 653 mm of penetration through the game's own ballistic model; the mission customiser's ammunition row is removed for this vehicle, which therefore spawns on its own list. Elevation is limited to −9/+20 for the gun and −10/+75 for the roof MG, and that MG is a real weapon with its own sight, fire control and 1200 rpm sound. The vehicle model, material and textures are **not** included: they are third-party art, so the release carries only `Bin/Mods/Leopard2A7V.dll` plus this file, and you supply your own `Leopard2A7V.obj` / `.mtl` / `textures/` set under `Bin/Mods/Leopard2A7V/` (those names are hard-coded). The arcs, the tread pitch and the sight magnification were measured offline and still want in-game confirmation. MIT for the code, which is unrelated to Radian Simulations.
+
+## 素材与授权
+
+代码 MIT，见 `LICENSE`。模型、贴图、分划板图样来自 War Thunder 的导出资产，版权归原主，不随本包分发，也不在本仓库里；要自己跑，请自备一套。本模组与 Radian Simulations 无关。在当前 Steam 版上实测过，游戏更新有可能让它失效。

@@ -9,12 +9,20 @@ using UnityEngine;
 namespace Leopard2A7V
 {
     /// <summary>
-    /// Replaces the FERO Z18 plate the donor gunner's daylight optic ships with by one laid out for the
-    /// Leopard 2A7V. War Thunder's 2A7V sight is the same EMES-15 family graticule the game already
-    /// carries on the "GPS/Optic" mesh, so the fixed geometry here (0.098 mrad lines, the side brackets,
-    /// the centre ring, the mil scales) is measured from that plate rather than invented, and the moving
-    /// part is a VerticalRange group like the FERO's so the FCS still walks the aiming mark with the
-    /// superelevation of whatever round is loaded.
+    /// Replaces the gunner's optical sight plate with the Leopard 2A7V's own EMES-15 sight picture, taken
+    /// from the War Thunder user sight for the vehicle and converted offline by
+    /// ModSources/tools/wt_sight_to_cs.py: the four corner brackets and the centre cross with its flanking
+    /// range marks, in true mrad. The whole picture is fixed in that file, so the plate hangs off the
+    /// boresight and the FCS compensates by laying the gun rather than by walking a mark on the glass.
+    ///
+    /// The target is the optical channel, not the physical one. The donor gunner has two daylight eyepieces:
+    /// `---TURRET SCRIPTS---/GPS/Optic`, the EMES-15 primary, five degrees and wired to the fire control
+    /// system, and `---MAIN GUN SCRIPTS---/Rh-120_L/44/FERO Z18`, a ten degree telescope with no FCS in its
+    /// ancestry. Tools/optic_reticle_map.py reads the plates off the bundle: GPS/Optic carries "EMES-15",
+    /// FERO Z18 carries "FERO Z18", whose plate is a stadia tree in metres with a VerticalRange group that
+    /// walks with the dialled range - the physical sight has no rangefinder, so its glass carries the
+    /// ranging. The optical plate is a single Boresight group, which is why a static conversion belongs
+    /// there and why putting it on the FERO leaves the sight the player actually aims through untouched.
     ///
     /// The donor's illumination type is kept. The plate's elements use NightIllumination, exactly like the
     /// FERO and T-72 plates, and the donor's own light definition is carried over: with its daytime value
@@ -23,20 +31,27 @@ namespace Leopard2A7V
     /// </summary>
     public static class LpReticle
     {
-        private const string DonorPlateName = "FERO Z18";
+        private const string DonorPlateName = "EMES-15";
         private const string PlateName = "LEO2A7V";
         private const string RoofGunPlateName = "LEO2A7V_AA";
 
-        /// <summary>The horizontal field the donor's daylight plate, and therefore its widths, are drawn for.</summary>
+        /// <summary>
+        /// The field one pixel of the War Thunder artwork was calibrated against: 1920 pixels across ten
+        /// degrees is about 0.09 mrad. The EMES-15 channel opens at half that, so the converted stroke of
+        /// 0.108 mrad lands at 2.4 pixels there, next to the 0.098 mrad the donor draws its own plate with.
+        /// </summary>
         private const float DonorPlateFov = 10f;
 
-        private const float MainLine = 0.12f;
         private const float MinorLine = 0.098f;
         private const float ScaleLine = 0.08f;
-        private const float MinorTick = 0.55f;
-        private const float MajorTick = 1.15f;
         private const float LabelSize = 9.5f;
         private const float TitleSize = 12f;
+
+        /// <summary>
+        /// Stroke width for the imported sight. A War Thunder sight draws its lines a pixel or two wide
+        /// and asks for 1.2x of that; one pixel of a 10 degree field is about 0.09 mrad.
+        /// </summary>
+        private const float WtStroke = 0.09f * 1.2f * (DonorPlateFov / 10f);
 
         internal const ReticleTree.Light.Type Lit = ReticleTree.Light.Type.NightIllumination;
 
@@ -92,8 +107,8 @@ namespace Leopard2A7V
             {
                 elements = new List<ReticleTree.TransformElement>()
             };
-            plane.elements.Add(Graticule());
-            plane.elements.Add(Index());
+            plane.elements.Add(WtSight());
+            if (LpSightData.Moving.Length > 0) plane.elements.Add(WtBallistic());
 
             var plate = ScriptableObject.CreateInstance<ReticleSO>();
             plate.name = PlateName;
@@ -217,73 +232,50 @@ namespace Leopard2A7V
         }
 
         /// <summary>
-        /// The aiming graticule, in the same VerticalRange group the FERO uses so ReticleMesh.Update
-        /// offsets it by the ballistic computer's superelevation for the loaded round.
+        /// The EMES-15 picture, exactly as the War Thunder 2A7V user sight draws it: the four corner
+        /// brackets and the centre cross with its flanking range marks. The table is generated offline from
+        /// that file by ModSources/tools/wt_sight_to_cs.py, already in mrad and already flipped into the
+        /// frame GHPC uses (War Thunder's y grows downwards, this one's grows up). Every mark in this sight
+        /// is fixed in the file - the ballistic solution moves the gun, not the glass - so the whole picture
+        /// hangs off the boresight.
         /// </summary>
-        private static ReticleTree.Angular Graticule()
-        {
-            var group = new ReticleTree.Angular(Vector2.zero, null, ReticleTree.GroupBase.Alignment.VerticalRange);
-            group.name = "Graticule";
-
-            // Main cross with a 1 mrad central gap and the small centre ring of the EMES-15 picture. The
-            // arms stop inside the bracket so the two do not read as one shape.
-            group.elements.Add(Line(new Vector2(1.2f, 0f), 0f, 1.4f, MainLine));
-            group.elements.Add(Line(new Vector2(-1.2f, 0f), 0f, 1.4f, MainLine));
-            group.elements.Add(Line(new Vector2(0f, 1.2f), 90f, 1.4f, MainLine));
-            group.elements.Add(Line(new Vector2(0f, -1.2f), 90f, 1.4f, MainLine));
-            group.elements.Add(Circle(Vector2.zero, 0.22f, MinorLine, 32));
-
-            // The bracket the EMES-15 plate puts around the cross, at its measured offsets.
-            group.elements.Add(Line(new Vector2(-4.9087f, 1.9635f), 0f, 4.9087f, MinorLine));
-            group.elements.Add(Line(new Vector2(-4.9087f, -1.9635f), 0f, 4.9087f, MinorLine));
-            group.elements.Add(Line(new Vector2(4.9087f, 1.9635f), 0f, 4.9087f, MinorLine));
-            group.elements.Add(Line(new Vector2(4.9087f, -1.9635f), 0f, 4.9087f, MinorLine));
-            group.elements.Add(Line(new Vector2(7.3631f, 0f), 90f, 0.7f, MinorLine));
-            group.elements.Add(Line(new Vector2(-7.3631f, 0f), 90f, 0.7f, MinorLine));
-
-            HorizontalScale(group);
-            VerticalScale(group);
-            return group;
-        }
-
-        /// <summary>Lead scale: NATO mils to 10 either side, numbered every five.</summary>
-        private static void HorizontalScale(ReticleTree.Angular group)
-        {
-            group.elements.Add(Line(new Vector2(6.925f, 0f), 0f, 6.25f, ScaleLine));
-            group.elements.Add(Line(new Vector2(-6.925f, 0f), 0f, 6.25f, ScaleLine));
-
-            for (int mil = 4; mil <= 10; mil++)
-            {
-                float tick = mil % 5 == 0 ? MajorTick : MinorTick;
-                group.elements.Add(Line(new Vector2(mil, 0f), 90f, tick, ScaleLine));
-                group.elements.Add(Line(new Vector2(-mil, 0f), 90f, tick, ScaleLine));
-                if (mil % 5 != 0) continue;
-                AddMark(group.elements, new Vector2(mil, 2.6f), mil.ToString());
-                AddMark(group.elements, new Vector2(-mil, 2.6f), mil.ToString());
-            }
-        }
-
-        /// <summary>Holdover scale below the cross, 10 mils deep.</summary>
-        private static void VerticalScale(ReticleTree.Angular group)
-        {
-            group.elements.Add(Line(new Vector2(0f, -6.925f), 90f, 6.25f, ScaleLine));
-
-            for (int mil = 4; mil <= 10; mil++)
-            {
-                float tick = mil % 5 == 0 ? MajorTick : MinorTick;
-                group.elements.Add(Line(new Vector2(0f, -mil), 0f, tick, ScaleLine));
-                if (mil % 5 == 0)
-                    AddMark(group.elements, new Vector2(2.5f, -mil), mil.ToString());
-            }
-        }
-
-        /// <summary>Fixed marking: which round the ballistic mark is following.</summary>
-        private static ReticleTree.Angular Index()
+        private static ReticleTree.Angular WtSight()
         {
             var group = new ReticleTree.Angular(Vector2.zero, null, ReticleTree.GroupBase.Alignment.Boresight);
-            group.name = "Index";
-            AddMark(group.elements, new Vector2(-15.5f, 12.5f), "DM53", TextAlignmentOptions.Left, TitleSize);
+            group.name = "WtSight";
+            AddSegments(group.elements, LpSightData.Fixed);
+            MelonLogger.Msg($"[L2A7V] reticle plate: {LpSightData.Fixed.Length / 4} fixed and " +
+                            $"{LpSightData.Moving.Length / 4} moving segment(s) from the War Thunder EMES-15 sight");
             return group;
+        }
+
+        /// <summary>
+        /// The marks the sight file tags `move: Yes`. The 2A7V file has none, but the group is kept so a
+        /// sight with a moving range ladder converts without touching this code.
+        /// </summary>
+        private static ReticleTree.Angular WtBallistic()
+        {
+            var group = new ReticleTree.Angular(Vector2.zero, null, ReticleTree.GroupBase.Alignment.VerticalRange);
+            group.name = "WtBallistic";
+            AddSegments(group.elements, LpSightData.Moving);
+            return group;
+        }
+
+        /// <summary>
+        /// One line per segment, length and rotation taken straight from the end points.
+        /// </summary>
+        private static void AddSegments(List<ReticleTree.TransformElement> elements, float[] segments)
+        {
+            for (int i = 0; i + 3 < segments.Length; i += 4)
+            {
+                float dx = segments[i + 2] - segments[i];
+                float dy = segments[i + 3] - segments[i + 1];
+                float length = (float)Math.Sqrt(dx * dx + dy * dy);
+                if (length < 0.01f) continue;
+                elements.Add(Line(
+                    new Vector2((segments[i] + segments[i + 2]) * 0.5f, (segments[i + 1] + segments[i + 3]) * 0.5f),
+                    (float)(Math.Atan2(dy, dx) * (180.0 / Math.PI)), length, WtStroke));
+            }
         }
 
         internal static ReticleTree.Line Line(Vector2 position, float degrees, float length, float thickness)
