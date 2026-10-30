@@ -18,8 +18,9 @@ namespace Leopard2A7V
     ///
     /// Emptying the unit's sets is enough: the panel writes an override only for sets it was handed, so
     /// this vehicle ends up with none and spawns on the ammunition list its own loadout composes - which
-    /// for this vehicle is DM23 plus the DM53 appended by LpWeapons, and for the 99A the Chinese rounds it
-    /// swaps in slot for slot. Rounds stay selectable in-mission through the rack's own transfer UI.
+    /// for this vehicle opens on the DM53 LpWeapons prepends, with the donor's DM23 and DM12 behind it, and
+    /// for the 99A the Chinese rounds it swaps in slot for slot. Rounds stay selectable in-mission through
+    /// the rack's own transfer UI.
     /// </summary>
     public static class LpAmmoMenu
     {

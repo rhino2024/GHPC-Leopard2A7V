@@ -68,6 +68,7 @@ namespace Leopard2A7V
             if (FindDeep(unitRoot.transform, LpConfig.VisualRootName) != null) return null;
             if (!CaptureTemplateMaterial(unitRoot)) return null;
             int repaired = LpAssets.RepairShader(TemplateMaterial.shader);
+            repaired += LpInterior.RepairShader(TemplateMaterial.shader);
             if (repaired > 0)
                 MelonLogger.Warning($"[L2A7V] re-pointed {repaired} cached material(s) onto " +
                                     TemplateMaterial.shader.name + ", the previous bundle copy had died");
@@ -138,8 +139,11 @@ namespace Leopard2A7V
                 return null;
             }
 
+            LpInterior.Attach(unitRoot, result);
             LpSightView.Attach(unitRoot, result);
+            LpThermal.Apply(unitRoot);
             LpBaseRig.Apply(unit);
+            LpArmor.Apply(unitRoot);
             LpArmorLog.Apply(unitRoot);
             ApplyHeat(result);
             LpDiagnostics.DumpOnce(unitRoot);

@@ -36,7 +36,7 @@ namespace Leopard2A7V
 
         public static void DumpOnce(GameObject unitRoot)
         {
-            if (_dumped || !LpConfig.DumpMaterials.Value) return;
+            if (_dumped) return;
             _dumped = true;
             Dump(unitRoot);
         }

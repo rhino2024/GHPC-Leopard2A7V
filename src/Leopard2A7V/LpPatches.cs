@@ -56,6 +56,7 @@ namespace Leopard2A7V
 
             LpWeapons.Install(harmony);
             LpAmmoMenu.Install(harmony);
+            LpArmor.Install(harmony);
         }
 
         private static MethodInfo FindStringSpawnMethod()
@@ -94,7 +95,7 @@ namespace Leopard2A7V
             if (!LpConfig.Enabled.Value || __instance == null) return true;
 
             bool isCustomUnit = uniqueName == LpConfig.UnitKey;
-            bool isSourceUnit = LpConfig.ConvertSourceUnit.Value && uniqueName == LpConfig.SourceUnitKey.Value;
+            bool isSourceUnit = LpConfig.ConvertSourceUnit.Value && uniqueName == LpConfig.SourceUnitKey;
             if (!isCustomUnit && !isSourceUnit) return true;
 
             if (!LpTemplate.Ensure(__instance)) return true;
@@ -119,12 +120,18 @@ namespace Leopard2A7V
             if (!LpConfig.Enabled.Value || __result == null) return;
 
             bool isCustomUnit = uniqueName == LpConfig.UnitKey;
-            bool isSourceUnit = LpConfig.ConvertSourceUnit.Value && uniqueName == LpConfig.SourceUnitKey.Value;
+            bool isSourceUnit = LpConfig.ConvertSourceUnit.Value && uniqueName == LpConfig.SourceUnitKey;
             if (!isCustomUnit && !isSourceUnit) return;
 
             var component = __result as Component;
             if (component == null) return;
             GameObject root = component.gameObject;
+
+            // The session's first spawn converts in place because no shader template exists yet, and every
+            // later one arrives as a clone of the converted template. Which passes run differs between the two,
+            // so the log has to say which path a given unit came in on.
+            MelonLogger.Msg($"[L2A7V] spawn '{root.name}' " + (root.GetComponent<LpSightView>() == null
+                ? "converts in place" : "arrived from the converted template"));
 
             // The loadout fills its racks in Start, which has not run yet, so the clip swapped in here is
             // the one the racks are built from rather than a correction applied afterwards.
@@ -152,17 +159,20 @@ namespace Leopard2A7V
     public class LpConvertBehaviour : MonoBehaviour
     {
         private const float TimeoutSeconds = 60f;
+        private const float RetrySeconds = 0.25f;
         private float _elapsed;
+        private float _nextAttempt;
         private bool _loggedWaiting;
 
         private void Update()
         {
-            if (LpVisual.Convert(gameObject) != null)
-            {
-                Destroy(this);
-                return;
-            }
+            _elapsed += Time.deltaTime;
+            if (Time.unscaledTime < _nextAttempt) return;
+            _nextAttempt = Time.unscaledTime + RetrySeconds;
 
+            // Convert is a few hundred mesh and material writes; asking it once a frame while the model is
+            // still parsing stacks that work into every single frame of the loading screen, which is what a
+            // frozen picture looks like even though nothing is waiting on anything.
             if (ObjModel.Failed)
             {
                 MelonLogger.Error("[L2A7V] giving up on the visual swap: " + ObjModel.Error);
@@ -174,8 +184,14 @@ namespace Leopard2A7V
                 Destroy(this);
                 return;
             }
+            if (!ObjModel.Loaded) return;
 
-            _elapsed += Time.deltaTime;
+            if (LpVisual.Convert(gameObject) != null)
+            {
+                Destroy(this);
+                return;
+            }
+
             if (_elapsed > TimeoutSeconds)
             {
                 MelonLogger.Error("[L2A7V] visual swap timed out, the donor look is still in place");

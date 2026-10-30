@@ -9,15 +9,15 @@ using UnityEngine;
 namespace Leopard2A7V
 {
     /// <summary>
-    /// Reports the protection layout the donor tank is spawned with, and changes nothing.
+    /// Reports the protection layout the donor tank is spawned with, after LpArmor has replaced the
+    /// composites' depth with the 2A7V's.
     ///
-    /// That is deliberate. The LEO2A3's armour is made of VariableArmor pieces whose thickness is measured
-    /// by raycasting through the plate's own mesh (VariableArmor.getThicknessAlongVector), with AverageRha
-    /// only used when the backface ray finds nothing, and its composite sections are modelled as named
-    /// arrays ("upper glacis array", "turret cheek composite") with a codex material that converts
-    /// physical millimetres into RHA per resistance type. Writing flat numbers over that would replace a
-    /// per-centimetre model with one figure per part, so the imported look ships with the donor's
-    /// ballistics intact and this file only exists to show what is actually in use.
+    /// The donor's armour is made of VariableArmor pieces whose thickness is measured by raycasting through
+    /// the plate's own mesh (VariableArmor.getThicknessAlongVector), with AverageRha only used when the
+    /// backface ray finds nothing, and its composite sections are modelled as named arrays ("upper glacis
+    /// array", "turret cheek composite") with a codex material that converts physical millimetres into RHA
+    /// per resistance type. Those pieces are answered by LpArmor's postfixes, so what this file prints for
+    /// them is the figure the game is now using.
     /// </summary>
     public static class LpArmorLog
     {
@@ -29,7 +29,7 @@ namespace Leopard2A7V
 
         public static void Apply(GameObject unitRoot)
         {
-            if (!LpConfig.LogArmor.Value || unitRoot == null) return;
+            if (unitRoot == null) return;
             if (!Logged.Add(unitRoot.GetInstanceID())) return;
 
             UniformArmor[] uniform = unitRoot.GetComponentsInChildren<UniformArmor>(true);
@@ -76,6 +76,14 @@ namespace Leopard2A7V
                 if (shown >= PerKind) break;
                 shown++;
                 if (IsCrew(armor.Name)) continue;
+                float ke, ce;
+                if (LpArmor.TryGetApplied(armor, out ke, out ce))
+                {
+                    sb.Append("\n[L2A7V]   measured '").Append(Shorten(armor.transform.name))
+                      .Append("' KE=").Append(ke.ToString("0"))
+                      .Append(" CE=").Append(ce.ToString("0")).Append(" (x-ray)");
+                    continue;
+                }
                 float fallback = VariableAverageRha == null ? float.NaN : (float)VariableAverageRha.GetValue(armor);
                 sb.Append("\n[L2A7V]   measured '").Append(Shorten(armor.Name))
                   .Append("' fallback RHA=").Append(fallback.ToString("0"))

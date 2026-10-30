@@ -7,7 +7,7 @@ Gunner, HEAT, PC! 的 MelonLoader 模组。以本体里的 `LEO2A3` 为供体，
 ## 你会看到什么
 
 - 载具列表里多一辆 **Leopard 2A7V**（内部 key `LEO2A7V`）。它是从 `LEO2A3` 克隆出来的，所以装甲布局、悬挂、乘员位、瞄具机位都沿用供体，换掉的只是外观和武器参数。
-- 主炮改称 **Rh-120 L/55**，弹种是 **DM53 APFSDS-T**：以游戏自己的 AP 弹为模板在运行时复制一份，换上 L/55 的炮口初速与 653 mm 穿深，弹道仍走游戏原本那套飞行模型。
+- 主炮改称 **Rh-120 L/55**，弹种是 **DM53 APFSDS-T**：以游戏自己的 AP 弹为模板在运行时复制一份，换上 L/55 的炮口初速（1750 m/s）与 800 mm 穿深（炮口口径的真车数据，游戏自己按弹速衰减，2 km 处约 665 mm），弹道仍走游戏原本那套飞行模型。
 - 行动前的弹药下拉里，这辆车**不会出现**。游戏那个面板是按供体的弹药清单建行的，认不出运行时造出来的弹种，只会把供体那两种旧弹摆在本车名字下面；模组把这几行整个拿掉，车就按自己那份清单出生——默认装 DM53。任务里想换弹，用炮塔里的弹架转移界面。
 - 主炮行程 **−9 / +20**，车顶机枪 **−10 / +75**。数字按这辆车自己的页面写，不是照供体的 −10 / +20 抄，所以炮管不会比真车多压一度。
 - 车顶那挺 MG3 变成真武器：能切进它的镜，能开火，「下一件武器」里轮得到，射速和声音沿用供体那挺 7.62（1200 rpm），弹链箱在模型上。
@@ -22,7 +22,9 @@ Gunner, HEAT, PC! 的 MelonLoader 模组。以本体里的 `LEO2A3` 为供体，
    Bin\Mods\Leopard2A7V.dll
    Bin\Mods\Leopard2A7V\Leopard2A7V.obj
    Bin\Mods\Leopard2A7V\Leopard2A7V.mtl
+   Bin\Mods\Leopard2A7V\Interior.obj         （战雷 x-ray 内构）
    Bin\Mods\Leopard2A7V\textures\        （37 张图）
+   Bin\Mods\Leopard2A7V\skins\           （nato / desert / winter / parade）
    ```
 
 3. 开一次游戏。MelonLoader 会在 `Bin\UserData\MelonPreferences.cfg` 里写出 `[Leopard2A7V]` 这一段。
@@ -42,7 +44,7 @@ assets/Leopard2A7V/          # 仓库里的原件
     textures/                # 37 张 PNG
 ```
 
-装好之后它们应该在 `Bin\Mods\Leopard2A7V\`，目录名和这三个文件名都是写死的，不能改。贴图走 Unity 的 `ImageConversion.LoadImage`，PNG / JPG 都读得了，DDS 读不了。`MaxTextureSize` 默认 2048，显存紧就降到 1024。
+装好之后它们应该在 `Bin\Mods\Leopard2A7V\`，目录名和这三个文件名都是写死的，不能改。贴图走 Unity 的 `ImageConversion.LoadImage`，PNG / JPG 都读得了，DDS 读不了。导入贴图的最大边长是 `LpConfig.cs` 里的常量 2048，显存紧要降到 1024 就改这一行重新编译。
 
 改过素材的话，`.mtl` 里的路径按相对 `Leopard2A7V\` 解析，贴图可以整批替换。
 
@@ -53,24 +55,22 @@ assets/Leopard2A7V/          # 仓库里的原件
 | 名字 | 默认 | 作用 |
 | --- | --- | --- |
 | Enabled | true | 总开关 |
-| SourceUnitKey | LEO2A3 | 拿来克隆的供体单位 |
 | FriendlyName | Leopard 2A7V | 界面上显示的名字 |
 | ConvertSourceUnit | false | 连本体原本的 LEO2A3 一起换皮 |
 | UseDonorRunningGear | false | 用供体自己的负重轮，不建模型里的那些 |
 | UseDonorTrackArt | true | 用供体那套蒙皮履带（唯一能正常滚动的选项） |
-| ApplyArmor / LogArmor | false / true | 是否改写装甲数值／只把每层打到日志里 |
-| MaxTextureSize | 2048 | 导入贴图的最大边长，显存紧就降到 1024 |
-| AlbedoLuminance | 0 | 把导入的反照率往灰色带拉，0 = 原样 |
-| NeutralMaps | true | 用中性色替换供体的涂装遮罩与光泽图 |
-| UseDetailMaps | true | 绑模型自带的 AO 烘焙 |
+| ShowInterior | true | 把战雷的 x-ray 内构搬进舱内，只在全图透视里画 |
+| WtArmor | true | 按 x-ray 几何给各区复合装甲定深，false = 保留供体实测值 |
+| Skin | 空 | 涂装方案：nato / desert / winter / parade，空 = 出厂 bronzegruen |
+| AddHeatSource | false | 给这辆车一个热源 |
 | ReplaceDayReticle | true | 炮手昼间镜换 2A7V 分划板 |
+| ThermalResolution | 1280,640 | 炮手热像画面的像素尺寸，比例保持 2:1 |
 | LimitMainGunElevation | true | 是否限制主炮行程 |
 | GunElevationDegrees / GunDepressionDegrees | 20 / −9 | 上面那个行程的两头 |
 | AddRoofGun | true | 把车顶那挺做成可用武器 |
 | RoofGunSightFov | 20 | 车顶机枪镜的视场（水平度） |
-| DumpMaterials | true | 建完外观后把材质与渲染器状态打一遍日志 |
 
-还有一组模型空间锚点（`VisualOffset`、`ModelTurretAxis`、`ModelGunAxis`、`CommanderViewOffset`、`RoofGunYawPoint`、`RoofGunTrunnion`、`RoofGunMuzzle`、`RoofGunSight`、`RoofGunRack`），换一套模型时才需要动，每一项在代码里都写了是怎么量出来的。
+其余的都编进代码了，不再是可以改的配置项：供体单位（`LEO2A3`）、模型空间锚点（`VisualOffset`、炮塔回转轴、炮耳轴、车长视角偏移、车顶机枪的各标点）和材质标定（贴图尺寸、反照率亮度、涂装遮罩、光泽、中性贴图、AO）都是 `LpConfig.cs` 里的常量，每一项旁边写了它是怎么量出来的，换一套模型时才需要改代码重编译。cfg 里这些旧行不会被读取，游戏下次启动会把它们清掉。
 
 **已经存档的值优先级高于代码里的新默认值。** 换过 DLL 之后要回头核对 `GunElevationDegrees = 20.0` / `GunDepressionDegrees = -9.0` 这两行还是不是你想要的。
 
@@ -96,7 +96,7 @@ dotnet build -c Release -p:GameDir="E:/SteamLibrary/steamapps/common/Gunner HEAT
 
 ## In English
 
-A Leopard 2A7V for GHPC, cloned from the vanilla `LEO2A3` so that armor, suspension, crew stations and optic slots stay the donor's own while the art, the gun codex, the round, the elevation arc, the roof machine gun and the gunner's daylight reticle become this vehicle's. The main gun is renamed `Rh-120 L/55` and fires `DM53 APFSDS-T`, built at runtime from the donor's AP round so that it carries the L/55's muzzle velocity and 653 mm of penetration through the game's own ballistic model; the mission customiser's ammunition row is removed for this vehicle, which therefore spawns on its own list. Elevation is limited to −9/+20 for the gun and −10/+75 for the roof MG, and that MG is a real weapon with its own sight, fire control and 1200 rpm sound. The vehicle model is retopologised from the Leopard 2A7V in War Thunder and then heavily reworked here (decimated, re-UV'd, textures rebuilt for this game's lighting), with the original model and textures remaining Gaijin Entertainment's. That set, its material and the 37 textures ship with both the repository (`assets/Leopard2A7V/`) and the release archive, so unzipping to the game root is all the setup there is. The arcs, the tread pitch and the sight magnification were measured offline and still want in-game confirmation. MIT, unrelated to Radian Simulations.
+A Leopard 2A7V for GHPC, cloned from the vanilla `LEO2A3` so that armor, suspension, crew stations and optic slots stay the donor's own while the art, the gun codex, the round, the elevation arc, the roof machine gun and the gunner's daylight reticle become this vehicle's. The main gun is renamed `Rh-120 L/55` and fires `DM53 APFSDS-T`, built at runtime from the donor's AP round so that it carries the L/55's muzzle velocity and 800 mm of penetration at the muzzle (the game scales it down with the round's own velocity decay, to about 665 mm at 2 km) through the game's own ballistic model; the mission customiser's ammunition row is removed for this vehicle, which therefore spawns on its own list. Elevation is limited to −9/+20 for the gun and −10/+75 for the roof MG, and that MG is a real weapon with its own sight, fire control and 1200 rpm sound. The vehicle model is retopologised from the Leopard 2A7V in War Thunder and then heavily reworked here (decimated, re-UV'd, textures rebuilt for this game's lighting), with the original model and textures remaining Gaijin Entertainment's. That set, its material and the 37 textures ship with both the repository (`assets/Leopard2A7V/`) and the release archive, so unzipping to the game root is all the setup there is. The arcs, the tread pitch and the sight magnification were measured offline and still want in-game confirmation. MIT, unrelated to Radian Simulations.
 
 ## 授权
 

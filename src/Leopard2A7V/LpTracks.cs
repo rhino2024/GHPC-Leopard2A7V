@@ -44,7 +44,7 @@ namespace Leopard2A7V
         /// per-frame offset, since the offset is in whole texture tiles - one tile of scroll always has to move
         /// exactly one pad's worth of track - which is why this is read through one place and not inlined.
         /// </summary>
-        private static float TreadsPerMetre => Mathf.Clamp(LpConfig.TrackTreadsPerMetre.Value, 0.05f, 20f);
+        private static float TreadsPerMetre => LpConfig.TrackTreadsPerMetre;
 
         /// <summary>
         /// Where this pass lays the pattern across the track's own width. These bounds are Challenger2's, taken

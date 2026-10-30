@@ -36,12 +36,26 @@ namespace Leopard2A7V
         private bool _warned;
         private bool _artVisible = true;
 
+        /// <summary>
+        /// True while Attach is building this component, which is the difference between a sight view that is
+        /// being set up now and one that arrived on a clone with its state already serialized.
+        /// </summary>
+        private static bool _building;
+
         public static void Attach(GameObject unitRoot, LpVisual.Assembly art)
         {
             if (unitRoot == null || art == null) return;
             LpSightView view = unitRoot.GetComponent<LpSightView>();
-            if (view == null) view = unitRoot.AddComponent<LpSightView>();
-            view.Setup(unitRoot.transform, art);
+            _building = true;
+            try
+            {
+                if (view == null) view = unitRoot.AddComponent<LpSightView>();
+                view.Setup(unitRoot.transform, art);
+            }
+            finally
+            {
+                _building = false;
+            }
         }
 
         /// <summary>Nudges the commander's camera slot so his own cupola fittings stay out of the frame.</summary>
@@ -143,12 +157,63 @@ namespace Leopard2A7V
         private void OnEnable()
         {
             CameraSlot.ActiveInstanceChanged += HandleSlotChanged;
+            if (!_building) Recover();
+            Apply(CameraSlot.ActiveInstance);
         }
 
         private void OnDisable()
         {
             CameraSlot.ActiveInstanceChanged -= HandleSlotChanged;
             Apply(null);
+        }
+
+        /// <summary>
+        /// A unit that arrives from the converted template never runs Setup, because its art was built on the
+        /// template and the clone inherits it as serialized data. The pivot list and the unit root are the two
+        /// things this pass needs from that data, and if either did not survive Instantiate the imported panels
+        /// stay full size in front of the gunner's eyepiece - which is what a second mission in one session
+        /// showed as nothing but the inside of his own turret. So the state is reported and, when it is missing,
+        /// rebuilt from the names Convert gave the pivots.
+        /// </summary>
+        private void Recover()
+        {
+            if (_unitRoot == null) _unitRoot = transform;
+
+            int live = 0;
+            if (_art != null)
+                for (int i = 0; i < _art.Length; i++)
+                    if (_art[i] != null) live++;
+
+            if (live != 0)
+            {
+                MelonLogger.Msg($"[L2A7V] sight view on {_unitRoot.name}: {live}/{_art.Length} art " +
+                                $"pivot(s) carried over from the template, art visible={_artVisible}");
+                return;
+            }
+
+            var pieces = new List<Transform>();
+            Add(pieces, FindDeep(_unitRoot, "L2A7V_HullPivot"));
+            Add(pieces, FindDeep(_unitRoot, "L2A7V_TurretPivot"));
+            Add(pieces, FindDeep(_unitRoot, "L2A7V_GunPivot"));
+            Add(pieces, FindDeep(_unitRoot, "L2A7V_CupolaPivot"));
+            Add(pieces, FindDeep(_unitRoot, "RoofGunMount"));
+            Add(pieces, FindDeep(_unitRoot, "RoofGunReceiver"));
+            _art = pieces.ToArray();
+
+            MelonLogger.Warning($"[L2A7V] sight view on {_unitRoot.name} arrived with no art pivots, " +
+                                $"re-found {_art.Length} of them by name");
+        }
+
+        private static Transform FindDeep(Transform node, string name)
+        {
+            if (node == null) return null;
+            if (node.name == name) return node;
+            for (int i = 0; i < node.childCount; i++)
+            {
+                Transform found = FindDeep(node.GetChild(i), name);
+                if (found != null) return found;
+            }
+            return null;
         }
 
         private void HandleSlotChanged(CameraSlot slot)

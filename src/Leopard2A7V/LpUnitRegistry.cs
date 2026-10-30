@@ -35,7 +35,7 @@ namespace Leopard2A7V
             if (!LpConfig.Enabled.Value) return false;
             if (lookup == null || lookup.AllUnits == null) return false;
 
-            string sourceKey = LpConfig.SourceUnitKey.Value;
+            string sourceKey = LpConfig.SourceUnitKey;
             UnitPrefabLookupScriptable.UnitPrefabMetadata source = null;
             bool alreadyRegistered = false;
 

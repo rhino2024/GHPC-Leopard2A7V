@@ -88,7 +88,7 @@ namespace Leopard2A7V
             var template = LpVisual.TemplateMaterial;
             if (template == null) return null;
 
-            Material material = Clone(materialIndex, template, LpConfig.NeutralMaps.Value);
+            Material material = Clone(materialIndex, template, LpConfig.NeutralMaps);
             Materials[cacheKey] = material;
             return material;
         }
@@ -100,7 +100,7 @@ namespace Leopard2A7V
                 : null;
 
             var material = new Material(template) { name = template.name + " (L2A7V " + materialIndex + ")" };
-            bool detailMaps = LpConfig.UseDetailMaps.Value;
+            bool detailMaps = LpConfig.UseDetailMaps;
             bool hasOcclusion = false;
             bool hasGloss = false;
             if (definition != null)
@@ -183,7 +183,7 @@ namespace Leopard2A7V
                 {
                     // R is "paint present"; the T-90A mod authors a flat 161 in G across its whole mask,
                     // so that is the value that reads as an unworn factory finish.
-                    _neutralPaintMask = FlatTexture(Level(LpConfig.PaintMaskLevel.Value), 161, 0, 255);
+                    _neutralPaintMask = FlatTexture(Level(LpConfig.PaintMaskLevel), 161, 0, 255);
                 }
                 return _neutralPaintMask;
             }
@@ -194,7 +194,7 @@ namespace Leopard2A7V
             get
             {
                 if (_neutralSmoothness == null)
-                    _neutralSmoothness = FlatTexture(0, 0, 0, Level(LpConfig.SmoothnessLevel.Value));
+                    _neutralSmoothness = FlatTexture(0, 0, 0, Level(LpConfig.SmoothnessLevel));
                 return _neutralSmoothness;
             }
         }
@@ -209,6 +209,47 @@ namespace Leopard2A7V
             texture.SetPixels32(pixels);
             texture.Apply(false);
             return texture;
+        }
+
+        /// <summary>
+        /// A material for geometry that has no texture coordinates at all, which is what the x-ray interior
+        /// meshes are: the War Thunder module shells carry no UVs the vehicle shader could sample, so every
+        /// map is a flat one. Cloned from the donor's own material so it runs the same shader with the same
+        /// keywords, and the flat normal goes through PackNormals like every other normal this mod binds.
+        /// </summary>
+        public static Material CreateFlatMaterial(string name, Color32 albedo, byte gloss)
+        {
+            Material template = LpVisual.TemplateMaterial;
+            if (template == null) return null;
+
+            var material = new Material(template) { name = name };
+
+            Texture2D albedoTexture = FlatTexture(albedo.r, albedo.g, albedo.b, albedo.a);
+            albedoTexture.name = name + " albedo";
+            if (material.HasProperty("_Albedo")) material.SetTexture("_Albedo", albedoTexture);
+
+            Texture2D smoothness = FlatTexture(0, 0, 0, gloss);
+            smoothness.name = name + " smoothness";
+            SetIfPresent(material, "_Smoothness", smoothness);
+            SetIfPresent(material, "_Occlusion", Texture2D.whiteTexture);
+            SetIfPresent(material, "_OcclusionStrength", 1f);
+            SetIfPresent(material, "_PaintMask", NeutralPaintMask);
+
+            var flat = new Color32[4];
+            for (int i = 0; i < 4; i++) flat[i] = new Color32(127, 127, 255, 255);
+            var normal = new Texture2D(2, 2, TextureFormat.RGBA32, true, false) { name = name + " normal" };
+            normal.SetPixels32(PackNormals(flat));
+            normal.Apply(true);
+            SetIfPresent(material, "_Normal", normal);
+
+            SetIfPresent(material, "_hackcamoUVs", 0f);
+            if (material.shaderKeywords != null && material.shaderKeywords.Length > 0)
+                material.DisableKeyword("_HACKCAMOUVS_ON");
+            SetIfPresent(material, "_CamoAmount", 0f);
+            SetIfPresent(material, "_ScorchAmount", 0f);
+            SetIfPresent(material, "_snow", 0f);
+            SetIfPresent(material, "_dirt", 0f);
+            return material;
         }
 
         public static Mesh BuildMesh(LpGroup group, string cacheKey, Vector3 anchor)
@@ -280,11 +321,41 @@ namespace Leopard2A7V
             Normal
         }
 
+        private static bool _skinWarned;
+
+        /// <summary>
+        /// Paint schemes are baked into their own folder rather than overwriting the factory sheet, so the
+        /// mod can switch without touching textures/. Only albedos are looked up here: a scheme carries the
+        /// painted hull, turret, gun and MG mount, and everything else (normals, AO, gloss, tracks, glass)
+        /// still comes from textures/.
+        /// </summary>
+        private static string ResolveSkin(string path)
+        {
+            string skin = LpConfig.SkinName;
+            if (skin.Length == 0) return path;
+
+            string candidate = Path.Combine(LpConfig.AssetDir, "skins", skin, Path.GetFileName(path));
+            if (File.Exists(candidate))
+            {
+                MelonLogger.Msg("[L2A7V] scheme '" + skin + "': " + Path.GetFileName(candidate));
+                return candidate;
+            }
+
+            if (!_skinWarned && !Directory.Exists(Path.Combine(LpConfig.AssetDir, "skins", skin)))
+            {
+                _skinWarned = true;
+                MelonLogger.Warning("[L2A7V] paint scheme '" + skin + "' has no folder under " +
+                                    Path.Combine(LpConfig.AssetDir, "skins") + "; keeping the factory scheme");
+            }
+            return path;
+        }
+
         private static Texture2D LoadTexture(string path, bool linear, Pack pack, bool isAlbedo = false)
         {
+            if (isAlbedo) path = ResolveSkin(path);
             string key = path + "|" + pack + (pack == Pack.Normal ? "|" + _normalMode : string.Empty)
                 + "|" + _maxTextureSize
-                + "|" + (isAlbedo ? LpConfig.AlbedoLuminance.Value : -1);
+                + "|" + (isAlbedo ? LpConfig.AlbedoLuminance : -1);
             Texture2D cached;
             if (Textures.TryGetValue(key, out cached)) return cached;
 
@@ -335,7 +406,7 @@ namespace Leopard2A7V
         /// </summary>
         private static Color32[] MatchAlbedoLuminance(Color32[] source, string path)
         {
-            int target = LpConfig.AlbedoLuminance.Value;
+            int target = LpConfig.AlbedoLuminance;
             if (target <= 0) return source;
 
             long sum = 0;

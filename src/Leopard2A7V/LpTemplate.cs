@@ -39,6 +39,9 @@ namespace Leopard2A7V
         private static GameObject _host;
         private static bool _gaveUp;
         private static bool _loggedWaitingMaterial;
+        private static bool _loggedWaitingPrefab;
+        private static GameObject _donorPrefab;
+        private static UnityEngine.AddressableAssets.AssetReference _donorReference;
 
         /// <summary>
         /// Builds the template once. False means "not now" and the caller falls back to converting a unit in
@@ -74,13 +77,10 @@ namespace Leopard2A7V
                 return false;
             }
 
+            // Null here is the ordinary "not resident yet" answer as well, so it must not mark the template
+            // as given up on; the loader reports a real failure on its own and sets _gaveUp then.
             GameObject donor = LoadDonorPrefab(spawner);
-            if (donor == null)
-            {
-                MelonLogger.Error("[L2A7V] the donor prefab could not be loaded, so no template can be built");
-                _gaveUp = true;
-                return false;
-            }
+            if (donor == null) return false;
 
             _host = new GameObject("L2A7V_TemplateHost");
             Object.DontDestroyOnLoad(_host);
@@ -112,14 +112,52 @@ namespace Leopard2A7V
 
         private static GameObject LoadDonorPrefab(UnitSpawner spawner)
         {
-            string sourceKey = LpConfig.SourceUnitKey.Value;
+            if (_donorPrefab != null) return _donorPrefab;
+
+            string sourceKey = LpConfig.SourceUnitKey;
             UnityEngine.AddressableAssets.AssetReference reference = spawner.GetPrefabByUniqueName(sourceKey);
             if (reference == null)
             {
                 MelonLogger.Error("[L2A7V] the donor unit '" + sourceKey + "' has no prefab reference in this spawner");
+                _gaveUp = true;
                 return null;
             }
-            return reference.LoadAssetAsync<GameObject>().WaitForCompletion();
+
+            // Taking the prefab the way this used to - LoadAssetAsync(...).WaitForCompletion() - blocks the
+            // main thread inside the game's own spawn call, and that is where a mission load could sit
+            // forever with nothing in the log: the addressable load is served by the very thread it is
+            // waiting on once the previous mission has released the bundle. Reaching an unfinished handle
+            // from here therefore only starts the load and lets this spawn stay on the in-place path; the
+            // next spawn finds it cached and builds the template.
+            var loaded = reference.Asset as GameObject;
+            if (loaded != null)
+            {
+                _donorPrefab = loaded;
+                return loaded;
+            }
+
+            if (_donorReference != reference)
+            {
+                _donorReference = reference;
+                if (!_loggedWaitingPrefab)
+                {
+                    _loggedWaitingPrefab = true;
+                    MelonLogger.Msg("[L2A7V] the donor prefab is not resident; asked for it and this spawn " +
+                                    "continues on the in-place path instead of blocking the load");
+                }
+                reference.LoadAssetAsync<GameObject>().Completed += handle =>
+                {
+                    if (handle.Result == null)
+                    {
+                        MelonLogger.Error("[L2A7V] the donor prefab could not be loaded, so no template can be built");
+                        _gaveUp = true;
+                        return;
+                    }
+                    _donorPrefab = handle.Result;
+                    MelonLogger.Msg("[L2A7V] donor prefab resident; the next spawn builds from the template");
+                };
+            }
+            return null;
         }
 
         private static void DestroyHost()
