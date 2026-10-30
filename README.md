@@ -31,7 +31,9 @@ Gunner, HEAT, PC! 的 MelonLoader 模组。以本体里的 `LEO2A3` 为供体，
 
 ## 素材
 
-发布包里那套模型是自制资产，不依赖任何外部下载：
+模型重拓扑自《战争雷霆》里的豹 2A7V，作者在此基础上做了大量优化：减面、重新展 UV、贴图按 GHPC 的光照重做，所以这套网格和贴图尺寸是按本作的预算重新配过的，不是原封搬过来的原始资产。原始模型与贴图的版权归 Gaijin Entertainment，本次重拓扑、优化与贴图处理的部分归本模组。
+
+发布包自带这套素材，不依赖任何外部下载：
 
 ```
 assets/Leopard2A7V/          # 仓库里的原件
@@ -94,8 +96,8 @@ dotnet build -c Release -p:GameDir="E:/SteamLibrary/steamapps/common/Gunner HEAT
 
 ## In English
 
-A Leopard 2A7V for GHPC, cloned from the vanilla `LEO2A3` so that armor, suspension, crew stations and optic slots stay the donor's own while the art, the gun codex, the round, the elevation arc, the roof machine gun and the gunner's daylight reticle become this vehicle's. The main gun is renamed `Rh-120 L/55` and fires `DM53 APFSDS-T`, built at runtime from the donor's AP round so that it carries the L/55's muzzle velocity and 653 mm of penetration through the game's own ballistic model; the mission customiser's ammunition row is removed for this vehicle, which therefore spawns on its own list. Elevation is limited to −9/+20 for the gun and −10/+75 for the roof MG, and that MG is a real weapon with its own sight, fire control and 1200 rpm sound. The vehicle model, its material and the 37 textures are this mod's own art and ship with both the repository (`assets/Leopard2A7V/`) and the release archive, so unzipping to the game root is all the setup there is. The arcs, the tread pitch and the sight magnification were measured offline and still want in-game confirmation. MIT, unrelated to Radian Simulations.
+A Leopard 2A7V for GHPC, cloned from the vanilla `LEO2A3` so that armor, suspension, crew stations and optic slots stay the donor's own while the art, the gun codex, the round, the elevation arc, the roof machine gun and the gunner's daylight reticle become this vehicle's. The main gun is renamed `Rh-120 L/55` and fires `DM53 APFSDS-T`, built at runtime from the donor's AP round so that it carries the L/55's muzzle velocity and 653 mm of penetration through the game's own ballistic model; the mission customiser's ammunition row is removed for this vehicle, which therefore spawns on its own list. Elevation is limited to −9/+20 for the gun and −10/+75 for the roof MG, and that MG is a real weapon with its own sight, fire control and 1200 rpm sound. The vehicle model is retopologised from the Leopard 2A7V in War Thunder and then heavily reworked here (decimated, re-UV'd, textures rebuilt for this game's lighting), with the original model and textures remaining Gaijin Entertainment's. That set, its material and the 37 textures ship with both the repository (`assets/Leopard2A7V/`) and the release archive, so unzipping to the game root is all the setup there is. The arcs, the tread pitch and the sight magnification were measured offline and still want in-game confirmation. MIT, unrelated to Radian Simulations.
 
 ## 授权
 
-代码、模型、材质与贴图都是本模组自己的作品，一起按 MIT 授权，见 `LICENSE`。本模组与 Radian Simulations 无关。在当前 Steam 版上实测过，游戏更新有可能让它失效。
+代码按 MIT 授权，见 `LICENSE`。模型重拓扑自《战争雷霆》的豹 2A7V，原始模型与贴图版权归 Gaijin Entertainment；重拓扑、减面、UV 重展与贴图重制是本模组做的。本模组与 Gaijin Entertainment、Radian Simulations 均无关联。在当前 Steam 版上实测过，游戏更新有可能让它失效。
