@@ -57,8 +57,10 @@ assets/Leopard2A7V/          # 仓库里的原件
 
 | 名字 | 默认 | 作用 |
 | --- | --- | --- |
-| Skin | 空 | 涂装方案：nato / desert / winter / parade，空 = 出厂 bronzegruen |
-| TextureResolution | 2k | 贴图精度：`2k` 或 `4k`，4k 读 `textures_uhq\` 里那套 4096 的图 |
+| Skin | factory | 涂装方案：factory / nato / desert / winter / parade |
+| TextureResolution | 2k | 贴图精度：2k / 4k；4k 读 `textures_uhq\` 里那套 4096 的图 |
+
+这两项在模组管理器里是**下拉选择**，不用手打——管理器从目录条目的 `singlechoice` 里读可选项，玩家看到的只有实际存在的值。cfg 里 `factory` 与留空等价（出厂 bronzegruen），两种写法都认。
 
 其余的都编进代码了，不再是可以改的配置项：供体单位（`LEO2A3`）、模型空间锚点（`VisualOffset`、炮塔回转轴、炮耳轴、车长视角偏移、车顶机枪的各标点）和材质标定（反照率亮度、涂装遮罩、光泽、中性贴图、AO）都是 `LpConfig.cs` 里的常量，每一项旁边写了它是怎么量出来的，换一套模型时才需要改代码重编译。cfg 里这些旧行不会被读取，游戏下次启动会把它们清掉。
 

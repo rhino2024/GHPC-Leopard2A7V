@@ -1,5 +1,11 @@
 # 版本
 
+## 0.1.6
+
+`Skin` 与 `TextureResolution` 不再让人手打：模组管理器里改成下拉，`Skin` 列出 factory / nato / desert / winter / parade，`TextureResolution` 列出 2k / 4k。玩家不用猜有哪些值可填。
+
+配套改动：`Skin` 现在认得 `factory`（也认 `default` / `none` / `stock` / `bronzegruen`）作为「不换涂装」，不必再把这一栏留空；`TextureResolution` 原本就容忍大小写与 `uhq` / `4096` 这些写法，填错只会掉回 2k。旧的空值仍然按出厂涂装处理，已有的 cfg 不用改。
+
 ## 0.1.5
 
 贴图精度做成配置项（`TextureResolution`，默认 `2k`）。4K 那套是同一批 UV 的高分辨率重导出，放在 `textures_uhq/`，与 2K 的 `textures/` 并行，运行时按文件逐个替换：车体、炮塔 4096² 与炮管 2048×1024 的反照率、法线、光泽走 4K；AO 两套本来就是同一张 512，机枪座 4K 里没有，这些自动落回 2K。导入上限跟着精度走（2048 / 4096）。

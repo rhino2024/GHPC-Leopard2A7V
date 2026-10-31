@@ -196,7 +196,7 @@ namespace Leopard2A7V
             Category = MelonPreferences.CreateCategory("Leopard2A7V", "Leopard 2A7V tank model swap");
 
             Skin = Category.CreateEntry("Skin", "",
-                "Paint scheme: nato, desert, winter, parade. Empty keeps the factory scheme");
+                "Paint scheme: factory, nato, desert, winter, parade");
 
             TextureResolution = Category.CreateEntry("TextureResolution", "2k",
                 "Texture detail: 2k or 4k. 4k is sharper up close but needs far more video memory and load time");
@@ -204,13 +204,22 @@ namespace Leopard2A7V
             MelonPreferences.Save();
         }
 
-        /// <summary>Selected paint scheme as a folder name, or empty for the factory scheme.</summary>
+        /// <summary>
+        /// Selected paint scheme as a folder name, or empty for the factory scheme. The manager offers the schemes
+        /// as a list, so "factory" is accepted as the word for "no scheme folder" rather than making the player
+        /// leave the field empty.
+        /// </summary>
         public static string SkinName
         {
             get
             {
                 string value = Skin == null ? null : Skin.Value;
-                return string.IsNullOrEmpty(value) ? string.Empty : value.Trim().ToLowerInvariant();
+                if (string.IsNullOrEmpty(value)) return string.Empty;
+                value = value.Trim().ToLowerInvariant();
+                if (value == "factory" || value == "default" || value == "none" || value == "stock" ||
+                    value == "bronzegruen")
+                    return string.Empty;
+                return value;
             }
         }
     }
