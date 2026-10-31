@@ -27,8 +27,19 @@ namespace Leopard2A7V
     {
         public static Material TemplateMaterial;
 
+        /// <summary>
+        /// The donor's own glazing, refreshed per spawn. The sight windows are the one part of the art the
+        /// painted template cannot draw: the War Thunder export dresses them in an opaque grey albedo, which
+        /// reads as a textured panel. "fake glass" on Standard (FLIR) is what GHPC itself draws them with.
+        /// </summary>
+        public static Material GlassTemplate;
+
         /// <summary>Submesh order per group cache key, published by LpAssets.BuildMesh.</summary>
         public static readonly Dictionary<string, List<int>> GroupMaterials = new Dictionary<string, List<int>>();
+
+        public const string CommanderGearNode = "CommanderGear";
+
+        public const string GlassShaderName = "Standard (FLIR)";
 
         private const string RigRoot = "leo2_rig";
         private const string HullBone = "hull";
@@ -67,6 +78,7 @@ namespace Leopard2A7V
             if (!IsReady) return null;
             if (FindDeep(unitRoot.transform, LpConfig.VisualRootName) != null) return null;
             if (!CaptureTemplateMaterial(unitRoot)) return null;
+            CaptureGlassMaterial(unitRoot);
             int repaired = LpAssets.RepairShader(TemplateMaterial.shader);
             repaired += LpInterior.RepairShader(TemplateMaterial.shader);
             if (repaired > 0)
@@ -123,7 +135,7 @@ namespace Leopard2A7V
                 // The mount and receiver leave the bucket when the machine gun is made drivable, because
                 // they turn on their own two axes rather than with the cupola.
                 result.CommanderGear = MakePivot(turretBone, "L2A7V_CupolaPivot", Vector3.zero);
-                AttachParts(result.CommanderGear, "CommanderGear",
+                AttachParts(result.CommanderGear, CommanderGearNode,
                     part => part.Group == LpGroup.CommanderGear &&
                           !(LpConfig.AddRoofGun && LpRoofGun.IsRoofGunPart(part.ObjectName)), ring);
 
@@ -306,6 +318,50 @@ namespace Leopard2A7V
             MelonLogger.Msg($"[L2A7V] shader template '{TemplateMaterial.name}' / " +
                             $"'{TemplateMaterial.shader.name}' from {PathOf(best.transform)}, layer {_visualLayer}");
             return true;
+        }
+
+        /// <summary>
+        /// Finds the donor's glazing each spawn. It has to be re-found rather than cached by reference for the
+        /// same reason the paint template does: the material lives in the vehicles bundle, which is released
+        /// when a mission ends, so after a reload the cached copy reports Hidden/InternalErrorShader.
+        /// </summary>
+        private static void CaptureGlassMaterial(GameObject unitRoot)
+        {
+            if (GlassTemplate != null && GlassTemplate.shader != null &&
+                GlassTemplate.shader.name == GlassShaderName)
+                return;
+
+            Material best = null;
+            int bestScore = int.MinValue;
+            foreach (Renderer renderer in unitRoot.GetComponentsInChildren<Renderer>(true))
+            {
+                if (IsImportedArt(renderer.transform)) continue;
+                foreach (Material candidate in renderer.sharedMaterials)
+                {
+                    if (candidate == null || candidate.shader == null) continue;
+                    string name = candidate.name.ToLowerInvariant();
+                    int score = 0;
+                    if (name.Contains("glass")) score += 6;
+                    if (name.Contains("fake glass")) score += 4;
+                    if (candidate.shader.name == GlassShaderName) score += 8;
+                    if (name.Contains("lamp")) score -= 4;
+                    if (name.Contains("see-through") || name.Contains("void")) score -= 12;
+                    if (score <= bestScore) continue;
+                    bestScore = score;
+                    best = candidate;
+                }
+            }
+
+            if (best != null && bestScore > 0)
+            {
+                GlassTemplate = best;
+                MelonLogger.Msg($"[L2A7V] glass material '{best.name}' / '{best.shader.name}' " +
+                                $"from the donor, queue {best.renderQueue}");
+                return;
+            }
+
+            GlassTemplate = null;
+            MelonLogger.Warning("[L2A7V] the donor reported no glass material, the sight windows stay opaque");
         }
 
         private static void ApplyHeat(Assembly art)

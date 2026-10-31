@@ -25,12 +25,21 @@ namespace Leopard2A7V
         /// Path fragments of donor nodes that must keep drawing: the interiors and armour collider art this
         /// export reuses, the animated running gear, and the turret's inner shell, hatch and hole plugs,
         /// which are the crew-compartment view and the seal against seeing through the vehicle.
+        ///
+        /// "grass cutter" is the track-imprint brush, not art. LEO2A3 carries two of them (one per track) as
+        /// 0.46 x 0.1 x 5.01 boxes on layer 24, and layer 24 is the exact cull mask of the TVE trax camera:
+        /// JBooth.MicroSplat.TraxManager shoots an orthographic camera up from y-1000 through it and writes the
+        /// vehicle's depth into the terrain's trax buffer, which is what leaves the tread marks in grass and
+        /// dirt. A mesh renderer survey of the donor shows those two boxes are the only renderers on layer 24,
+        /// so keeping them cannot put donor panels back on screen. They were being stripped by this pass, and
+        /// a stripped mesh stays stripped no matter how often TraxMeshRender.Start re-enables its renderers.
         /// </summary>
         private static readonly string[] KeepFragments =
         {
             "leo2_int", "m1ip_interior", "leo2_volumes", "collider", "hitzone", "interior",
             "wheel", "suspension",
             "sight open", "sight closed", "turret parent", "ammo door", "loader's hatch", "turret holes",
+            "grass cutter",
         };
 
         /// <summary>
@@ -70,7 +79,20 @@ namespace Leopard2A7V
             }
             MelonLogger.Msg($"[L2A7V] stripped the geometry of {stripped} donor renderer(s), " +
                             $"{netting} of them netting or markings");
+
+            int imprints = 0;
+            foreach (Renderer renderer in unitRoot.GetComponentsInChildren<Renderer>(true))
+            {
+                if (renderer == null || renderer.gameObject.layer != ImprintLayer) continue;
+                MeshFilter filter = renderer.GetComponent<MeshFilter>();
+                if (filter != null && filter.sharedMesh != null) imprints++;
+            }
+            MelonLogger.Msg($"[L2A7V] {imprints} track-imprint brush(es) kept on layer {ImprintLayer}, " +
+                            "the only layer the TVE trax camera renders");
         }
+
+        /// <summary>Measured on both donor prefabs: the trax cutters are the only renderers on layer 24.</summary>
+        public const int ImprintLayer = 24;
 
         /// <summary>
         /// Takes the mesh away instead of only switching the renderer off. GHPC re-enables donor renderers from

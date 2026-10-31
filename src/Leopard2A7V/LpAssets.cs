@@ -81,6 +81,14 @@ namespace Leopard2A7V
 
         public static Material GetMaterial(int materialIndex, string groupKey)
         {
+            // Only the cupola pulls us_turret_glass, and there it is the commander's sight window. The same
+            // material also skins a few appliqué plates elsewhere, which must stay solid.
+            if (groupKey == LpVisual.CommanderGearNode && IsGlass(materialIndex))
+            {
+                Material glass = GetGlassMaterial();
+                if (glass != null) return glass;
+            }
+
             string cacheKey = groupKey + "|" + materialIndex;
             Material cached;
             if (Materials.TryGetValue(cacheKey, out cached)) return cached;
@@ -91,6 +99,35 @@ namespace Leopard2A7V
             Material material = Clone(materialIndex, template, LpConfig.NeutralMaps);
             Materials[cacheKey] = material;
             return material;
+        }
+
+        private static bool IsGlass(int materialIndex)
+        {
+            if (materialIndex < 0 || materialIndex >= ObjModel.Materials.Count) return false;
+            string name = ObjModel.Materials[materialIndex].Name;
+            return name != null && name.IndexOf("glass", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static Material _glassMaterial;
+
+        private static Material GetGlassMaterial()
+        {
+            Material source = LpVisual.GlassTemplate;
+            if (source == null) return null;
+
+            if (_glassMaterial == null)
+            {
+                _glassMaterial = new Material(source) { name = "L2A7V glass" };
+                MelonLogger.Msg($"[L2A7V] using '{source.name}' for the commander's sight glass, " +
+                                $"queue {_glassMaterial.renderQueue}");
+            }
+            else if (_glassMaterial.shader != source.shader)
+            {
+                // The cached clone outlived the bundle that held its shader; the donor's fresh copy revives it.
+                _glassMaterial.shader = source.shader;
+                MelonLogger.Warning("[L2A7V] re-pointed the sight glass at the live " + source.shader.name);
+            }
+            return _glassMaterial;
         }
 
         private static Material Clone(int materialIndex, Material template, bool neutralMaps)
@@ -328,16 +365,25 @@ namespace Leopard2A7V
         /// mod can switch without touching textures/. Only albedos are looked up here: a scheme carries the
         /// painted hull, turret, gun and MG mount, and everything else (normals, AO, gloss, tracks, glass)
         /// still comes from textures/.
+        ///
+        /// The scheme has a 4K twin under skins_uhq when the 4K kit is selected. Resolution is decided inside
+        /// the scheme, not after it: a sheet the 4K bake did not produce (this mod's MG mount is 2K only) must
+        /// stay on the 2K painted sheet rather than fall through to the unpainted 4K factory albedo.
         /// </summary>
         private static string ResolveSkin(string path)
         {
             string skin = LpConfig.SkinName;
             if (skin.Length == 0) return path;
 
-            string candidate = Path.Combine(LpConfig.AssetDir, "skins", skin, Path.GetFileName(path));
-            if (File.Exists(candidate))
+            string file = Path.GetFileName(path);
+            string[] roots = LpConfig.UhdTextures
+                ? new[] { "skins_uhq", "skins" }
+                : new[] { "skins" };
+            foreach (string root in roots)
             {
-                MelonLogger.Msg("[L2A7V] scheme '" + skin + "': " + Path.GetFileName(candidate));
+                string candidate = Path.Combine(LpConfig.AssetDir, root, skin, file);
+                if (!File.Exists(candidate)) continue;
+                MelonLogger.Msg("[L2A7V] scheme '" + skin + "': " + root + "/" + skin + "/" + file);
                 return candidate;
             }
 

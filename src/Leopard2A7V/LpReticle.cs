@@ -93,6 +93,9 @@ namespace Leopard2A7V
                 mesh.GetLight(Lit, out float value);
                 mesh.SetLight(Lit, float.IsNaN(value) || value <= 0f ? 0f : 1f);
 
+                // The plate's lit slot is real and sits at zero by day; the illumination key has to drive it.
+                LpReticleLight.Attach(mesh);
+
                 MelonLogger.Msg("[L2A7V] gunner day reticle replaced with the 2A7V plate on " +
                                 Describe(optic.transform, unitRoot));
                 return;
@@ -119,7 +122,11 @@ namespace Leopard2A7V
             plate.lights = donor != null && donor.lights != null
                 ? new List<ReticleTree.Light>(donor.lights)
                 : new List<ReticleTree.Light>();
-            if (plate.lights.Count == 0)
+            // Every element on this plate draws with the lit slot, so that light has to exist even when the
+            // donor's list was built from a different type: without it the lines come out transparent and the
+            // illumination key has nothing to push. A donor that already has one keeps its own colour; the
+            // vanilla night-illumination red stands in when it does not.
+            if (!plate.lights.Exists(light => light.type == Lit))
                 plate.lights.Add(new ReticleTree.Light { type = Lit, color = new RGB(4f, 0.335f, 0f) });
 
             _plate = plate;
@@ -153,7 +160,11 @@ namespace Leopard2A7V
             plate.lights = donor != null && donor.lights != null
                 ? new List<ReticleTree.Light>(donor.lights)
                 : new List<ReticleTree.Light>();
-            if (plate.lights.Count == 0)
+            // Every element on this plate draws with the lit slot, so that light has to exist even when the
+            // donor's list was built from a different type: without it the lines come out transparent and the
+            // illumination key has nothing to push. A donor that already has one keeps its own colour; the
+            // vanilla night-illumination red stands in when it does not.
+            if (!plate.lights.Exists(light => light.type == Lit))
                 plate.lights.Add(new ReticleTree.Light { type = Lit, color = new RGB(4f, 0.335f, 0f) });
 
             _roofGunPlate = plate;

@@ -11,9 +11,11 @@ Gunner, HEAT, PC! 的 MelonLoader 模组。以本体里的 `LEO2A3` 为供体，
 - 行动前的弹药下拉里，这辆车**不会出现**。游戏那个面板是按供体的弹药清单建行的，认不出运行时造出来的弹种，只会把供体那两种旧弹摆在本车名字下面；模组把这几行整个拿掉，车就按自己那份清单出生——默认装 DM53。任务里想换弹，用炮塔里的弹架转移界面。
 - 主炮行程 **−9 / +20**，车顶机枪 **−10 / +75**。数字按这辆车自己的页面写，不是照供体的 −10 / +20 抄，所以炮管不会比真车多压一度。
 - 车顶那挺 MG3 变成真武器：能切进它的镜，能开火，「下一件武器」里轮得到，射速和声音沿用供体那挺 7.62（1200 rpm），弹链箱在模型上。
-- 炮手昼间镜里画的是 2A7V 的分划板，倍率档与分划抬落仍由游戏自己的火控驱动。
+- 炮手昼间镜里画的是 2A7V 的分划板，倍率档与分划抬落仍由游戏自己的火控驱动。按 `I` 可以把刻线点亮（荧光），再按一次熄灭；入夜时游戏自己会点亮，不受影响。
 - 装甲按这辆车自己的公开数据落表：首上约 600 / 1200（对穿甲 / 对破甲），炮塔正面约 800 / 1400，炮盾是弱点 350 / 700。GHPC 在命中点会乘 1/cos(入射角)，所以 49 个区域里存的是按该处倾角折回的垂直厚度（首上面 36.9°、颊面偏离正前 37°）——首上写 360，正打仍然拦 600。
 - 舱内那套是战雷 x-ray 的乘员舱，只在全图透视里画；里面的人形也是战雷那套。游戏自己的士兵在画面上被让开，但乘员位、受伤、弃车都照旧。
+- 车长舱口的镜窗是真玻璃：战雷导出的镜片是不透明灰，看着像贴了图的板，这里换成供体自己的 `Standard (FLIR)` 玻璃着色。
+- 车会在地形上压出履带印。供体的压印刷（`grass cutter`，layer 24）被保留下来，TraxManager 才能把车体深度写进地形。
 
 ## 装
 
@@ -27,7 +29,8 @@ Gunner, HEAT, PC! 的 MelonLoader 模组。以本体里的 `LEO2A3` 为供体，
    Bin\Mods\Leopard2A7V\Interior.obj     （战雷 x-ray 内构）
    Bin\Mods\Leopard2A7V\textures\        （37 张 2K 图）
    Bin\Mods\Leopard2A7V\textures_uhq\    （9 张 4K 图，TextureResolution=4k 时用）
-   Bin\Mods\Leopard2A7V\skins\           （nato / desert / winter / parade）
+   Bin\Mods\Leopard2A7V\skins\           （nato / desert / winter / parade，2K 涂装）
+   Bin\Mods\Leopard2A7V\skins_uhq\       （同四套的 4K 涂装，TextureResolution=4k 时用）
    ```
 
 3. 开一次游戏。MelonLoader 会在 `Bin\UserData\MelonPreferences.cfg` 里写出 `[Leopard2A7V]` 这一段。
@@ -46,11 +49,13 @@ assets/Leopard2A7V/          # 仓库里的原件
     Leopard2A7V.mtl          # 每个贴图通道一条材质
     textures/                # 37 张 PNG
     textures_uhq/            # 可选：同名的 4K 重导出版本，TextureResolution=4k 时优先读这里
+    skins/                   # 四套 2K 涂装
+    skins_uhq/               # 四套 4K 涂装的同名重导出
 ```
 
 装好之后它们应该在 `Bin\Mods\Leopard2A7V\`，目录名和这三个文件名都是写死的，不能改。贴图走 Unity 的 `ImageConversion.LoadImage`，PNG / JPG 都读得了，DDS 读不了。导入贴图的最大边长跟着精度走：2k 是 2048，4k 是 4096。
 
-`textures_uhq\` 只放 4K 里真有提升的那几张（车体/炮塔/炮管的反照率、法线与光泽）；AO 烤图两套一样大，机枪座 4K 里没有，这几项自动回落到 2K。4K 一张 4096² 解码后是 64 MB，车体和炮塔各三张，显存吃紧就留在 2k。
+`textures_uhq\` 只放 4K 里真有提升的那几张（车体/炮塔/炮管的反照率、法线与光泽）；AO 烤图两套一样大，机枪座 4K 里没有，这几项自动回落到 2K。涂装同理：`skins_uhq\` 里是四套涂装的车体、炮塔、炮管反照率 4K 版，机枪座那张两套都没有，用的是 2K 涂装图而不是未涂装的出厂贴图。4K 一张 4096² 解码后是 64 MB，车体和炮塔各三张，显存吃紧就留在 2k。
 
 改过素材的话，`.mtl` 里的路径按相对 `Leopard2A7V\` 解析，贴图可以整批替换。
 
