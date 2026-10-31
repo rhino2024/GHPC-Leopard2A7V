@@ -12,6 +12,8 @@ Gunner, HEAT, PC! 的 MelonLoader 模组。以本体里的 `LEO2A3` 为供体，
 - 主炮行程 **−9 / +20**，车顶机枪 **−10 / +75**。数字按这辆车自己的页面写，不是照供体的 −10 / +20 抄，所以炮管不会比真车多压一度。
 - 车顶那挺 MG3 变成真武器：能切进它的镜，能开火，「下一件武器」里轮得到，射速和声音沿用供体那挺 7.62（1200 rpm），弹链箱在模型上。
 - 炮手昼间镜里画的是 2A7V 的分划板，倍率档与分划抬落仍由游戏自己的火控驱动。
+- 装甲按这辆车自己的公开数据落表：首上约 600 / 1200（对穿甲 / 对破甲），炮塔正面约 800 / 1400，炮盾是弱点 350 / 700。GHPC 在命中点会乘 1/cos(入射角)，所以 49 个区域里存的是按该处倾角折回的垂直厚度（首上面 36.9°、颊面偏离正前 37°）——首上写 360，正打仍然拦 600。
+- 舱内那套是战雷 x-ray 的乘员舱，只在全图透视里画；里面的人形也是战雷那套。游戏自己的士兵在画面上被让开，但乘员位、受伤、弃车都照旧。
 
 ## 装
 
@@ -22,8 +24,9 @@ Gunner, HEAT, PC! 的 MelonLoader 模组。以本体里的 `LEO2A3` 为供体，
    Bin\Mods\Leopard2A7V.dll
    Bin\Mods\Leopard2A7V\Leopard2A7V.obj
    Bin\Mods\Leopard2A7V\Leopard2A7V.mtl
-   Bin\Mods\Leopard2A7V\Interior.obj         （战雷 x-ray 内构）
-   Bin\Mods\Leopard2A7V\textures\        （37 张图）
+   Bin\Mods\Leopard2A7V\Interior.obj     （战雷 x-ray 内构）
+   Bin\Mods\Leopard2A7V\textures\        （37 张 2K 图）
+   Bin\Mods\Leopard2A7V\textures_uhq\    （9 张 4K 图，TextureResolution=4k 时用）
    Bin\Mods\Leopard2A7V\skins\           （nato / desert / winter / parade）
    ```
 
@@ -59,12 +62,13 @@ assets/Leopard2A7V/          # 仓库里的原件
 | --- | --- | --- |
 | Skin | factory | 涂装方案：factory / nato / desert / winter / parade |
 | TextureResolution | 2k | 贴图精度：2k / 4k；4k 读 `textures_uhq\` 里那套 4096 的图 |
+| ArmorCoefficient | 1 | 全部装甲的强度倍率，1 = 公开数据，范围 0.3–3 |
 
-这两项在模组管理器里是**下拉选择**，不用手打——管理器从目录条目的 `singlechoice` 里读可选项，玩家看到的只有实际存在的值。cfg 里 `factory` 与留空等价（出厂 bronzegruen），两种写法都认。
+前两项在模组管理器里是**下拉选择**，不用手打——管理器从目录条目的 `singlechoice` 里读可选项，玩家看到的只有实际存在的值。cfg 里 `factory` 与留空等价（出厂 bronzegruen），两种写法都认。`ArmorCoefficient` 是数值项，填超范围会夹到 0.3–3，填错不会让车变无敌或没装甲。
 
-其余的都编进代码了，不再是可以改的配置项：供体单位（`LEO2A3`）、模型空间锚点（`VisualOffset`、炮塔回转轴、炮耳轴、车长视角偏移、车顶机枪的各标点）和材质标定（反照率亮度、涂装遮罩、光泽、中性贴图、AO）都是 `LpConfig.cs` 里的常量，每一项旁边写了它是怎么量出来的，换一套模型时才需要改代码重编译。cfg 里这些旧行不会被读取，游戏下次启动会把它们清掉。
+其余的都编进代码了，不再是可以改的配置项：供体单位（`LEO2A3`）、模型空间锚点（`VisualOffset`、炮塔回转轴、炮耳轴、车长视角偏移、车顶机枪的各标点）、各区域的装甲厚度和材质标定（反照率亮度、涂装遮罩、光泽、中性贴图、AO）都是 `LpConfig.cs` / `LpArmor.cs` 里的常量，每一项旁边写了它是怎么量出来的，换一套模型时才需要改代码重编译。cfg 里这些旧行不会被读取，游戏下次启动会把它们清掉。
 
-**已经存档的值优先级高于代码里的新默认值。** 换过 DLL 之后要回头核对 `Skin` 和 `TextureResolution` 这两行还是不是你想要的。
+**已经存档的值优先级高于代码里的新默认值。** 换过 DLL 之后要回头核对 `Skin`、`TextureResolution`、`ArmorCoefficient` 这三行还是不是你想要的。
 
 ## 先说清楚
 

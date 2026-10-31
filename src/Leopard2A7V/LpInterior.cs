@@ -33,6 +33,12 @@ namespace Leopard2A7V
         public static volatile bool Failed;
         public static string Error;
 
+        /// <summary>
+        /// Triangles of the War Thunder crew figures in the compartment (material int_crew). Non-zero is what
+        /// lets the donor's own soldiers be taken out without leaving empty seats behind.
+        /// </summary>
+        public static int CrewTriangles { get; private set; }
+
         private sealed class Part
         {
             public string Bone;
@@ -149,10 +155,15 @@ namespace Leopard2A7V
                 }
             }
 
-            int triangles = 0;
-            foreach (Part part in Parts) triangles += part.Triangles.Count / 3;
+            int triangles = 0, crew = 0;
+            foreach (Part part in Parts)
+            {
+                triangles += part.Triangles.Count / 3;
+                if (part.Material == "int_crew") crew += part.Triangles.Count / 3;
+            }
+            CrewTriangles = crew;
             MelonLogger.Msg($"[L2A7V] interior parsed: {Parts.Count} part(s), {triangles} triangle(s), " +
-                            $"{Palette.Count} material class(es)");
+                            $"{Palette.Count} material class(es), {CrewTriangles} of them the crew mannequins");
         }
 
         private static Vector3 ReadVector(string line)

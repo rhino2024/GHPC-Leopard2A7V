@@ -4,13 +4,13 @@ using UnityEngine;
 namespace Leopard2A7V
 {
     /// <summary>
-    /// What the player chooses is the paint scheme the vehicle wears and how much texture detail to load;
-    /// everything else this vehicle needs is a measured fact about the imported model - where its turret ring is,
-    /// where the roof MG's muzzle is, how the paint maps are baked, which of the donor's parts to keep - and
-    /// those belong in the source beside the measurement that produced them. A config file of thirty switches
-    /// invites a stray edit that silently misaligns the art or strips the interior, so from 2026-10-31 only Skin
-    /// and TextureResolution are written to MelonPreferences and the rest are the values this vehicle is
-    /// authored and tested at.
+    /// What the player chooses is the paint scheme the vehicle wears, how much texture detail to load, and one
+    /// balance dial over the protection; everything else this vehicle needs is a measured fact about the
+    /// imported model - where its turret ring is, where the roof MG's muzzle is, how the paint maps are baked,
+    /// which of the donor's parts to keep - and those belong in the source beside the measurement that
+    /// produced them. A config file of thirty switches invites a stray edit that silently misaligns the art or
+    /// strips the interior, so only Skin, TextureResolution and ArmorCoefficient are written to
+    /// MelonPreferences and the rest are the values this vehicle is authored and tested at.
     /// </summary>
     public static class LpConfig
     {
@@ -19,6 +19,23 @@ namespace Leopard2A7V
         public static MelonPreferences_Entry<string> Skin;
 
         public static MelonPreferences_Entry<string> TextureResolution;
+
+        /// <summary>
+        /// Scale over every RHAe figure LpArmor writes, for players who want the vehicle softer or tougher than
+        /// the real-data table. 1 keeps the published protection; the value is clamped so a typo cannot make the
+        /// vehicle invulnerable or unarmoured.
+        /// </summary>
+        public static MelonPreferences_Entry<float> ArmorCoefficient;
+
+        public static float ArmorScale
+        {
+            get
+            {
+                float value = ArmorCoefficient == null ? 1f : ArmorCoefficient.Value;
+                if (float.IsNaN(value) || value <= 0f) return 1f;
+                return Mathf.Clamp(value, 0.3f, 3f);
+            }
+        }
 
         public const string UnitKey = "LEO2A7V";
         public const string VisualRootName = "Leopard2A7V_Visual";
@@ -200,6 +217,9 @@ namespace Leopard2A7V
 
             TextureResolution = Category.CreateEntry("TextureResolution", "2k",
                 "Texture detail: 2k or 4k. 4k is sharper up close but needs far more video memory and load time");
+
+            ArmorCoefficient = Category.CreateEntry("ArmorCoefficient", 1f,
+                "Armour strength multiplier over every zone (1 = real-data protection, 0.3-3)");
 
             MelonPreferences.Save();
         }

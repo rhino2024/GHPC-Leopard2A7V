@@ -22,18 +22,25 @@ namespace Leopard2A7V
     /// Puts the 2A7V's protection in place of the LEO2A3's.
     ///
     /// The donor measures its composites by raycasting the plate's own mesh and multiplying by the layer's
-    /// ArmorType, so a piece defends whatever thickness the 1979 hull happens to be drawn at. The 2A7V's
-    /// protection instead comes from War Thunder's x-ray module for that zone: the module's plate thickness
-    /// (ModSources/tools/wt_armor_measure_out.txt) times the ArmorType the donor already uses for that kind
-    /// of array, which keeps the game's own material balance and only replaces the depth. Only slab-like
-    /// modules measure as a plate (hull_01, turret_01/02/03/09/10/11); where a module wraps a whole region
-    /// (the hull_02/03/05 side strakes, turret_04/05/06/08, the roof) its extents are box dimensions rather
-    /// than a thickness, so those zones take the real-world 2A7V plate instead and their comment says so.
+    /// ArmorType, so a piece defends whatever thickness the 1979 hull happens to be drawn at (its glacis
+    /// comes out at 170 mm of RHAe, a B-technology hull). The 2A7V is armed with D-technology arrays whose
+    /// published protection is much higher, and GHPC multiplies a stored number by 1/cos(obliquity) at the
+    /// hit, so a table that simply stored the published figure would hand the glacis 1.67 times it against a
+    /// level shot. Each zone therefore holds the published protection divided by the obliquity of that
+    /// plate's own face - the front glacis face sits 36.9 deg above horizontal (normal +0.6/+0.8 in the x-ray
+    /// export, ModSources/tools/wt_armor_measure_out.txt), the cheek face 37 deg off the frontal axis - which
+    /// is why the glacis reads 360 and still stops 600 against a level shot.
+    ///
+    /// The published figures are the ones open sources agree on for this mark: about 600 mm of glacis and
+    /// 800 mm of turret front against a long rod, 1200 and 1400 against a shaped charge, the mantlet the
+    /// turret's weak line at 350/700. Zones where the x-ray module wraps a whole region (the hull_02/03/05
+    /// side strakes, turret_04/05/06/08, the roof) never had a plate thickness to scale, and those take the
+    /// real-world 2A7V plate instead; their comment says so.
     ///
     /// UniformArmor pieces take the number directly. VariableArmor pieces cannot - their thickness is
     /// computed per hit - so they carry an LpArmorZone and the Harmony postfixes answer for them. Physical
     /// thickness requests (spall cone geometry, impact effects) are passed through untouched so only the
-    /// ballistic answer changes.
+    /// ballistic answer changes. LpConfig.ArmorCoefficient scales every number on its way in.
     /// </summary>
     public static class LpArmor
     {
@@ -51,13 +58,16 @@ namespace Leopard2A7V
         private static readonly Dictionary<string, Zone> Table = new Dictionary<string, Zone>(StringComparer.Ordinal)
         {
             // ---- hull front -------------------------------------------------------------
-            // hull_01 is the 629 mm front hull composite module; the array's own codex is .52 KE / 1.15 CE.
-            { "upper glacis array", new Zone { Ke = 327f, Ce = 723f, Source = "hull_01 629mm x .52/1.15" } },
+            // hull_01 is the 629 mm front hull composite module (D-technology array). Published protection for
+            // the 2A7V's glacis is ~600 mm against a long rod and ~1200 against a shaped charge; the face is
+            // 36.9 deg above horizontal, so a level shot travels 1.67x deeper and the perpendicular figure GHPC
+            // wants is 600/1.67 = 360 and 1200/1.67 = 720.
+            { "upper glacis array", new Zone { Ke = 360f, Ce = 720f, Source = "hull_01 629mm, real 600/1200 frontal" } },
 
             // The x-ray draws one glacis package (hull_01 spans y 0.65..1.46, i.e. both bands), and the donor
             // splits it into an upper and a lower plate that no round crosses both of, so the lower band takes
             // the same module.
-            { "lower glacis array", new Zone { Ke = 327f, Ce = 723f, Source = "hull_01 629mm x .52/1.15" } },
+            { "lower glacis array", new Zone { Ke = 360f, Ce = 720f, Source = "hull_01 629mm, real 600/1200 frontal" } },
 
             // Below the composite the nose is a plain plate; the donor measures it at 64 mm and the 2A7V keeps
             // a comparable one.
@@ -95,10 +105,12 @@ namespace Leopard2A7V
             // ---- turret front -----------------------------------------------------------
             // The front turret is three stacked modules in the x-ray: 1142 mm left, 809 mm right outer,
             // 1200 mm right inner. The left cheek is a single plate in the donor and the right one is two,
-            // so the right shares the left's total rather than doubling it.
-            { "cheek array left A", new Zone { Ke = 502f, Ce = 1016f, Source = "turret_03 1142mm x .44/.89" } },
-            { "cheek array right A", new Zone { Ke = 251f, Ce = 508f, Source = "half of turret_03 x .55/.89" } },
-            { "cheek array right B", new Zone { Ke = 251f, Ce = 508f, Source = "half of turret_03 x .69/1.36" } },
+            // so the right shares the left's total rather than doubling it. Published protection for the
+            // 2A7V's turret front is ~800 mm against a long rod and ~1400 against a shaped charge; the cheek
+            // face is 37 deg off the frontal axis, so the perpendicular figures are 800/1.25 and 1400/1.25.
+            { "cheek array left A", new Zone { Ke = 640f, Ce = 1120f, Source = "turret_03 1142mm, real 800/1400 frontal" } },
+            { "cheek array right A", new Zone { Ke = 320f, Ce = 560f, Source = "half of turret_03, real 800/1400 frontal" } },
+            { "cheek array right B", new Zone { Ke = 320f, Ce = 560f, Source = "half of turret_03, real 800/1400 frontal" } },
 
             // The wedge's outer steel faces, drawn 52 mm and 28 mm on the donor; the 2A7V's are the same
             // shape but the array behind them carries the protection, so these stay plain plate.
@@ -107,15 +119,16 @@ namespace Leopard2A7V
             { "front left plate", new Zone { Ke = 40f, Ce = 40f, Source = "real 40mm turret face" } },
             { "front right plate", new Zone { Ke = 40f, Ce = 40f, Source = "real 40mm turret face" } },
 
-            // turret_10 is the 515 mm mantlet block; mantlet array codex is .40 KE / 1.30 CE.
-            { "mantlet", new Zone { Ke = 206f, Ce = 670f, Source = "turret_10 515mm x .40/1.30" } },
+            // turret_10 is the 515 mm mantlet block, the turret's weak line: ~350 mm against a long rod and
+            // ~700 against a shaped charge, deliberately well under the cheeks.
+            { "mantlet", new Zone { Ke = 350f, Ce = 700f, Source = "turret_10 515mm, real 350/700" } },
 
             // ---- turret sides, roof and bustle ------------------------------------------
             // turret_04/05/06/08 fill the turret flanks: turret_04 is an 862 mm whole-turret box and the two
             // rear plates are only 123/106 mm, so the module depths there are not comparable. The 2A7V's side
-            // elements plus the casting give roughly 220 mm against a rod.
-            { "array left", new Zone { Ke = 220f, Ce = 280f, Source = "turret_04 flank, real 220mm KE" } },
-            { "array right", new Zone { Ke = 220f, Ce = 280f, Source = "turret_04 flank, real 220mm KE" } },
+            // elements plus the casting give roughly 260 mm against a rod.
+            { "array left", new Zone { Ke = 260f, Ce = 340f, Source = "turret_04 flank, real 260mm KE" } },
+            { "array right", new Zone { Ke = 260f, Ce = 340f, Source = "turret_04 flank, real 260mm KE" } },
 
             // The x-ray has no roof module; the donor draws 81 mm and 72 mm. The 2A7V added armour over the
             // crew positions, nothing over the bustle.
@@ -182,6 +195,7 @@ namespace Leopard2A7V
             var used = new HashSet<string>(StringComparer.Ordinal);
             var sb = new StringBuilder();
             int uniform = 0, measured = 0;
+            float scale = LpConfig.ArmorScale;
 
             UniformArmor[] stored = unitRoot.GetComponentsInChildren<UniformArmor>(true);
             foreach (UniformArmor armor in stored)
@@ -189,13 +203,14 @@ namespace Leopard2A7V
                 Zone zone;
                 string via;
                 if (!TryMatch(armor.transform.name, armor.Name, out zone, used, out via)) continue;
+                float ke = zone.Ke * scale, ce = zone.Ce * scale;
                 sb.Append("\n[L2A7V]   uniform '").Append(armor.transform.name)
                   .Append("' [").Append(via).Append("] ").Append(armor.PrimarySabotRha.ToString("0")).Append('/')
                   .Append(armor.PrimaryHeatRha.ToString("0"))
-                  .Append(" -> ").Append(zone.Ke.ToString("0")).Append('/').Append(zone.Ce.ToString("0"))
+                  .Append(" -> ").Append(ke.ToString("0")).Append('/').Append(ce.ToString("0"))
                   .Append(" (").Append(zone.Source).Append(')');
-                armor.PrimarySabotRha = zone.Ke;
-                armor.PrimaryHeatRha = zone.Ce;
+                armor.PrimarySabotRha = ke;
+                armor.PrimaryHeatRha = ce;
                 // RHAE mode stops the stored number from being scaled by the codex a second time.
                 armor.ThicknessListed = UniformArmor.ThicknessMode.RHAE;
                 armor.AngleMatters = true;
@@ -208,10 +223,11 @@ namespace Leopard2A7V
                 Zone zone;
                 string via;
                 if (!TryMatch(armor.transform.name, armor.Name, out zone, used, out via)) continue;
-                Mark(armor.gameObject, zone);
+                float ke = zone.Ke * scale, ce = zone.Ce * scale;
+                Mark(armor.gameObject, ke, ce);
                 sb.Append("\n[L2A7V]   measured '").Append(armor.transform.name)
-                  .Append("' [").Append(via).Append("] raycast -> ").Append(zone.Ke.ToString("0")).Append('/')
-                  .Append(zone.Ce.ToString("0")).Append(" (").Append(zone.Source).Append(')');
+                  .Append("' [").Append(via).Append("] raycast -> ").Append(ke.ToString("0")).Append('/')
+                  .Append(ce.ToString("0")).Append(" (").Append(zone.Source).Append(')');
                 measured++;
             }
 
@@ -227,9 +243,10 @@ namespace Leopard2A7V
                 MelonLogger.Warning("[L2A7V] armour zone '" + key + "' matched no piece on " + unitRoot.name);
             }
 
-            MelonLogger.Msg("[L2A7V] War Thunder protection applied to " + (uniform + measured) +
+            MelonLogger.Msg("[L2A7V] protection applied to " + (uniform + measured) +
                             " piece(s) (" + uniform + " stored, " + measured + " measured) out of " +
-                            stored.Length + " uniform + " + raycast.Length + " raycast-measured" + sb);
+                            stored.Length + " uniform + " + raycast.Length + " raycast-measured, armour " +
+                            "coefficient x" + scale.ToString("0.00") + sb);
 
             if (unmatched.Count > 0) DumpIdentities(stored, raycast);
             return true;
@@ -283,12 +300,12 @@ namespace Leopard2A7V
             return name != null && (name.Contains("human") || name.Contains("flesh") || name.Contains("bone"));
         }
 
-        private static void Mark(GameObject piece, Zone zone)
+        private static void Mark(GameObject piece, float ke, float ce)
         {
             var marker = piece.GetComponent<LpArmorZone>();
             if (marker == null) marker = piece.AddComponent<LpArmorZone>();
-            marker.Ke = zone.Ke;
-            marker.Ce = zone.Ce;
+            marker.Ke = ke;
+            marker.Ce = ce;
         }
 
         public static bool TryGetApplied(VariableArmor armor, out float ke, out float ce)
