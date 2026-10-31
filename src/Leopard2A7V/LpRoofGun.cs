@@ -67,7 +67,7 @@ namespace Leopard2A7V
 
         public static void Apply(GameObject unitRoot, LpVisual.Assembly art, Vector3 ring)
         {
-            if (!LpConfig.AddRoofGun.Value || unitRoot == null || art == null || art.Turret == null) return;
+            if (!LpConfig.AddRoofGun || unitRoot == null || art == null || art.Turret == null) return;
             if (art.RoofGunYaw != null) return;
 
             var manager = unitRoot.GetComponent<WeaponsManager>();
@@ -365,7 +365,7 @@ namespace Leopard2A7V
             if (SlotReparentTarget != null) SlotReparentTarget.SetValue(slot, null);
 
             float donorFov = slot.DefaultFov;
-            slot.DefaultFov = Mathf.Clamp(LpConfig.RoofGunSightFov.Value, 1f, 60f);
+            slot.DefaultFov = Mathf.Clamp(LpConfig.RoofGunSightFov, 1f, 60f);
             if (donorFov > 0f && !Mathf.Approximately(donorFov, slot.DefaultFov))
             {
                 // The lens frame is a flat quad at a fixed distance, so widening the picture only keeps

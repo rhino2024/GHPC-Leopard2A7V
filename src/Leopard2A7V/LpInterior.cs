@@ -48,26 +48,25 @@ namespace Leopard2A7V
         private static readonly Dictionary<string, Mesh> Meshes = new Dictionary<string, Mesh>();
 
         /// <summary>
-        /// One colour per module class, taken from the donor's own compartment sheets rather than invented:
-        /// ModSources/tools/lp_interior_palette.txt quantises LEO2_int_co and M1IP_interior_co (1024x1024,
-        /// the two materials the LEO2A3 draws its interior with) into sRGB clusters, and these are the
-        /// cluster means of the classes those clusters belong to. GHPC draws the compartment under the
-        /// vehicle's own interior lighting, so the values are albedo, not the lit colour; the gloss is the
-        /// alpha of the smoothness map, the same channel the vehicle shader reads on the painted hull.
-        /// int_crew is the one author's choice - the donor's crew is skinned art with its own texture, and
-        /// the materials named Crew/AarCrew in the vehicles bundle are the AAR highlight outlines, not a
-        /// uniform colour, so there is nothing to measure.
+        /// One colour per module class. The values the donor's own compartment sheets quantise to (see
+        /// ModSources/tools/lp_interior_palette.txt) are within a few units of neutral grey of each other -
+        /// 136/136/120 for armour plate against 120/120/104 for the liner - and drawn together in one mesh
+        /// they read as a single grey mass, so each class is given the hue its cluster means point at, with
+        /// the channels pulled apart and the whole lifted by roughly a sixth because the compartment draws
+        /// under the vehicle's own dim interior light. int_armor keeps the sheet's warm sand tone, int_fcs
+        /// the olive of the donor's cabinets, and int_ammo/int_crew take the ochre and khaki War Thunder's
+        /// x-ray art uses for propellant and for people. The gloss stays the alpha of the smoothness map.
         /// </summary>
         private static readonly Dictionary<string, Color32> Palette = new Dictionary<string, Color32>
         {
-            { "int_armor", new Color32(136, 136, 120, 255) },     // LEO2_int_co 36.1%
-            { "int_liner", new Color32(120, 120, 104, 255) },     // M1IP_interior_co 5.9%
-            { "int_firewall", new Color32(56, 56, 40, 255) },     // M1IP_interior_co 18.2%
-            { "int_ammo", new Color32(96, 96, 80, 255) },         // M1IP_interior_co 4.7% - rack frames only
-            { "int_engine", new Color32(40, 40, 40, 255) },       // M1IP_interior_co 9.7%
-            { "int_fcs", new Color32(56, 72, 40, 255) },          // LEO2_int_co 5.7% olive cabinets
-            { "int_metal", new Color32(120, 120, 120, 255) },     // LEO2_int_co 8.4%
-            { "int_crew", new Color32(96, 92, 76, 255) },
+            { "int_armor", new Color32(172, 160, 118, 255) },     // from LEO2_int_co 36.1% (136,136,120)
+            { "int_liner", new Color32(140, 152, 148, 255) },     // from M1IP_interior_co 5.9% (120,120,104)
+            { "int_firewall", new Color32(122, 84, 62, 255) },    // from M1IP_interior_co 18.2% (56,56,40)
+            { "int_ammo", new Color32(198, 166, 72, 255) },       // from M1IP_interior_co 4.7% (96,96,80)
+            { "int_engine", new Color32(78, 82, 96, 255) },       // from M1IP_interior_co 9.7% (40,40,40)
+            { "int_fcs", new Color32(96, 124, 66, 255) },         // from LEO2_int_co 5.7% (56,72,40)
+            { "int_metal", new Color32(156, 158, 166, 255) },     // from LEO2_int_co 8.4% (120,120,120)
+            { "int_crew", new Color32(184, 158, 116, 255) },      // author's choice - khaki, not grey
         };
 
         private static readonly Dictionary<string, byte> Gloss = new Dictionary<string, byte>
@@ -84,7 +83,7 @@ namespace Leopard2A7V
 
         public static void Preload(string directory)
         {
-            if (!LpConfig.ShowInterior.Value) return;
+            if (!LpConfig.ShowInterior) return;
             string path = Path.Combine(directory, "Interior.obj");
             if (!File.Exists(path))
             {
@@ -225,7 +224,7 @@ namespace Leopard2A7V
         /// </summary>
         public static int Attach(GameObject unitRoot, LpVisual.Assembly art)
         {
-            if (!LpConfig.ShowInterior.Value || art == null) return 0;
+            if (!LpConfig.ShowInterior || art == null) return 0;
             if (Failed)
             {
                 return 0;

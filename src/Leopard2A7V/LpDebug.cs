@@ -30,7 +30,6 @@ namespace Leopard2A7V
 
         private static void ApplyToLiveUnits()
         {
-            if (!LpConfig.Enabled.Value) return;
             if (!ObjModel.Loaded)
             {
                 MelonLogger.Warning("[L2A7V] model not parsed yet" + (ObjModel.Failed ? ": " + ObjModel.Error : ""));

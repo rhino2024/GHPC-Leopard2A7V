@@ -90,7 +90,7 @@ namespace Leopard2A7V
 
             if (UniqueNameField != null) UniqueNameField.SetValue(clone.GetComponent<Unit>(), LpConfig.UnitKey);
             if (FriendlyNameField != null)
-                FriendlyNameField.SetValue(clone.GetComponent<Unit>(), LpConfig.FriendlyName.Value);
+                FriendlyNameField.SetValue(clone.GetComponent<Unit>(), LpConfig.FriendlyName);
 
             Stopwatch clock = Stopwatch.StartNew();
             LpVisual.Assembly art = LpVisual.Convert(clone);

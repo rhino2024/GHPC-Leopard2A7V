@@ -92,10 +92,10 @@ namespace Leopard2A7V
             GHPC.Mission.Data.UnitMetaData metaData,
             GHPC.AI.WaypointHolder startingWaypoints, Transform parentTransform, ref IUnit __result)
         {
-            if (!LpConfig.Enabled.Value || __instance == null) return true;
+            if (__instance == null) return true;
 
             bool isCustomUnit = uniqueName == LpConfig.UnitKey;
-            bool isSourceUnit = LpConfig.ConvertSourceUnit.Value && uniqueName == LpConfig.SourceUnitKey;
+            bool isSourceUnit = LpConfig.ConvertSourceUnit && uniqueName == LpConfig.SourceUnitKey;
             if (!isCustomUnit && !isSourceUnit) return true;
 
             if (!LpTemplate.Ensure(__instance)) return true;
@@ -117,10 +117,10 @@ namespace Leopard2A7V
 
         public static void SpawnUnitPostfix(string uniqueName, IUnit __result)
         {
-            if (!LpConfig.Enabled.Value || __result == null) return;
+            if (__result == null) return;
 
             bool isCustomUnit = uniqueName == LpConfig.UnitKey;
-            bool isSourceUnit = LpConfig.ConvertSourceUnit.Value && uniqueName == LpConfig.SourceUnitKey;
+            bool isSourceUnit = LpConfig.ConvertSourceUnit && uniqueName == LpConfig.SourceUnitKey;
             if (!isCustomUnit && !isSourceUnit) return;
 
             var component = __result as Component;
@@ -144,8 +144,9 @@ namespace Leopard2A7V
             // The record cloned into the lookup carries the display name, but a scenario that spawns the
             // donor key directly, or an older save, shows the field on the Unit component instead.
             if (UnitFriendlyName != null && isCustomUnit)
-                UnitFriendlyName.SetValue(__result, LpConfig.FriendlyName.Value);
+                UnitFriendlyName.SetValue(__result, LpConfig.FriendlyName);
 
+            LpDonorArt.Request(root);
             LpArmorLog.Apply(root);
             root.AddComponent<LpConvertBehaviour>();
         }

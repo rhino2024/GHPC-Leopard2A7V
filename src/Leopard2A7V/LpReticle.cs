@@ -69,7 +69,7 @@ namespace Leopard2A7V
 
         public static void Apply(Transform unitRoot)
         {
-            if (!LpConfig.ReplaceDayReticle.Value || unitRoot == null) return;
+            if (!LpConfig.ReplaceDayReticle || unitRoot == null) return;
 
             foreach (UsableOptic optic in unitRoot.GetComponentsInChildren<UsableOptic>(true))
             {
@@ -137,7 +137,7 @@ namespace Leopard2A7V
         {
             if (_roofGunPlate != null) return _roofGunPlate;
             FindFont();
-            _roofGunPixelScale = Mathf.Max(1f, LpConfig.RoofGunSightFov.Value / DonorPlateFov);
+            _roofGunPixelScale = Mathf.Max(1f, LpConfig.RoofGunSightFov / DonorPlateFov);
 
             var plane = new ReticleTree.FocalPlane(ReticleTree.FocalPlane.Type.First)
             {

@@ -42,9 +42,12 @@ assets/Leopard2A7V/          # 仓库里的原件
     Leopard2A7V.obj          # 单个 OBJ，顶点权重可选
     Leopard2A7V.mtl          # 每个贴图通道一条材质
     textures/                # 37 张 PNG
+    textures_uhq/            # 可选：同名的 4K 重导出版本，TextureResolution=4k 时优先读这里
 ```
 
-装好之后它们应该在 `Bin\Mods\Leopard2A7V\`，目录名和这三个文件名都是写死的，不能改。贴图走 Unity 的 `ImageConversion.LoadImage`，PNG / JPG 都读得了，DDS 读不了。导入贴图的最大边长是 `LpConfig.cs` 里的常量 2048，显存紧要降到 1024 就改这一行重新编译。
+装好之后它们应该在 `Bin\Mods\Leopard2A7V\`，目录名和这三个文件名都是写死的，不能改。贴图走 Unity 的 `ImageConversion.LoadImage`，PNG / JPG 都读得了，DDS 读不了。导入贴图的最大边长跟着精度走：2k 是 2048，4k 是 4096。
+
+`textures_uhq\` 只放 4K 里真有提升的那几张（车体/炮塔/炮管的反照率、法线与光泽）；AO 烤图两套一样大，机枪座 4K 里没有，这几项自动回落到 2K。4K 一张 4096² 解码后是 64 MB，车体和炮塔各三张，显存吃紧就留在 2k。
 
 改过素材的话，`.mtl` 里的路径按相对 `Leopard2A7V\` 解析，贴图可以整批替换。
 
@@ -54,25 +57,12 @@ assets/Leopard2A7V/          # 仓库里的原件
 
 | 名字 | 默认 | 作用 |
 | --- | --- | --- |
-| Enabled | true | 总开关 |
-| FriendlyName | Leopard 2A7V | 界面上显示的名字 |
-| ConvertSourceUnit | false | 连本体原本的 LEO2A3 一起换皮 |
-| UseDonorRunningGear | false | 用供体自己的负重轮，不建模型里的那些 |
-| UseDonorTrackArt | true | 用供体那套蒙皮履带（唯一能正常滚动的选项） |
-| ShowInterior | true | 把战雷的 x-ray 内构搬进舱内，只在全图透视里画 |
-| WtArmor | true | 按 x-ray 几何给各区复合装甲定深，false = 保留供体实测值 |
 | Skin | 空 | 涂装方案：nato / desert / winter / parade，空 = 出厂 bronzegruen |
-| AddHeatSource | false | 给这辆车一个热源 |
-| ReplaceDayReticle | true | 炮手昼间镜换 2A7V 分划板 |
-| ThermalResolution | 1280,640 | 炮手热像画面的像素尺寸，比例保持 2:1 |
-| LimitMainGunElevation | true | 是否限制主炮行程 |
-| GunElevationDegrees / GunDepressionDegrees | 20 / −9 | 上面那个行程的两头 |
-| AddRoofGun | true | 把车顶那挺做成可用武器 |
-| RoofGunSightFov | 20 | 车顶机枪镜的视场（水平度） |
+| TextureResolution | 2k | 贴图精度：`2k` 或 `4k`，4k 读 `textures_uhq\` 里那套 4096 的图 |
 
-其余的都编进代码了，不再是可以改的配置项：供体单位（`LEO2A3`）、模型空间锚点（`VisualOffset`、炮塔回转轴、炮耳轴、车长视角偏移、车顶机枪的各标点）和材质标定（贴图尺寸、反照率亮度、涂装遮罩、光泽、中性贴图、AO）都是 `LpConfig.cs` 里的常量，每一项旁边写了它是怎么量出来的，换一套模型时才需要改代码重编译。cfg 里这些旧行不会被读取，游戏下次启动会把它们清掉。
+其余的都编进代码了，不再是可以改的配置项：供体单位（`LEO2A3`）、模型空间锚点（`VisualOffset`、炮塔回转轴、炮耳轴、车长视角偏移、车顶机枪的各标点）和材质标定（反照率亮度、涂装遮罩、光泽、中性贴图、AO）都是 `LpConfig.cs` 里的常量，每一项旁边写了它是怎么量出来的，换一套模型时才需要改代码重编译。cfg 里这些旧行不会被读取，游戏下次启动会把它们清掉。
 
-**已经存档的值优先级高于代码里的新默认值。** 换过 DLL 之后要回头核对 `GunElevationDegrees = 20.0` / `GunDepressionDegrees = -9.0` 这两行还是不是你想要的。
+**已经存档的值优先级高于代码里的新默认值。** 换过 DLL 之后要回头核对 `Skin` 和 `TextureResolution` 这两行还是不是你想要的。
 
 ## 先说清楚
 

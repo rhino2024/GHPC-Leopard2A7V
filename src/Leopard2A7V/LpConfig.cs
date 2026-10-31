@@ -4,34 +4,27 @@ using UnityEngine;
 namespace Leopard2A7V
 {
     /// <summary>
-    /// What the player can switch on and off. Everything else this vehicle needs is a measured fact about the
-    /// imported model - where its turret ring is, where the roof MG's muzzle is, how the paint maps are baked -
-    /// and those belong in the source beside the measurement that produced them, not in a config file where a
-    /// stray edit silently misaligns the art.
+    /// What the player chooses is the paint scheme the vehicle wears and how much texture detail to load;
+    /// everything else this vehicle needs is a measured fact about the imported model - where its turret ring is,
+    /// where the roof MG's muzzle is, how the paint maps are baked, which of the donor's parts to keep - and
+    /// those belong in the source beside the measurement that produced them. A config file of thirty switches
+    /// invites a stray edit that silently misaligns the art or strips the interior, so from 2026-10-31 only Skin
+    /// and TextureResolution are written to MelonPreferences and the rest are the values this vehicle is
+    /// authored and tested at.
     /// </summary>
     public static class LpConfig
     {
         public static MelonPreferences_Category Category;
 
-        public static MelonPreferences_Entry<bool> Enabled;
-        public static MelonPreferences_Entry<bool> ConvertSourceUnit;
-        public static MelonPreferences_Entry<bool> UseDonorRunningGear;
-        public static MelonPreferences_Entry<bool> UseDonorTrackArt;
-        public static MelonPreferences_Entry<bool> ShowInterior;
-        public static MelonPreferences_Entry<bool> WtArmor;
-        public static MelonPreferences_Entry<string> FriendlyName;
         public static MelonPreferences_Entry<string> Skin;
-        public static MelonPreferences_Entry<bool> AddHeatSource;
-        public static MelonPreferences_Entry<bool> ReplaceDayReticle;
-        public static MelonPreferences_Entry<string> ThermalResolution;
-        public static MelonPreferences_Entry<bool> LimitMainGunElevation;
-        public static MelonPreferences_Entry<float> GunElevationDegrees;
-        public static MelonPreferences_Entry<float> GunDepressionDegrees;
-        public static MelonPreferences_Entry<bool> AddRoofGun;
-        public static MelonPreferences_Entry<float> RoofGunSightFov;
+
+        public static MelonPreferences_Entry<string> TextureResolution;
 
         public const string UnitKey = "LEO2A7V";
         public const string VisualRootName = "Leopard2A7V_Visual";
+
+        /// <summary>Name this vehicle shows in the menus.</summary>
+        public const string FriendlyName = "Leopard 2A7V";
 
         /// <summary>
         /// The vanilla unit this vehicle is cloned from. Its prefab, rig, armour types and sight plumbing are
@@ -41,14 +34,92 @@ namespace Leopard2A7V
         public const string SourceUnitKey = "LEO2A3";
 
         /// <summary>
+        /// Off: only this mod's own entry is restyled and the stock LEO2A3s stay as the game made them, so a
+        /// scenario can field both.
+        /// </summary>
+        public static readonly bool ConvertSourceUnit = false;
+
+        /// <summary>
+        /// Off builds this model's own road wheels, idlers and sprockets on the donor's suspension bones, which
+        /// is the geometry the exported hull actually has.
+        /// </summary>
+        public static readonly bool UseDonorRunningGear = false;
+
+        /// <summary>
+        /// On keeps the donor's track loops. The 2A7V's own exported loop is authored too short to reach
+        /// around its hull, so this is the only setting that shows a complete, rolling track.
+        /// </summary>
+        public static readonly bool UseDonorTrackArt = true;
+
+        /// <summary>
+        /// Draw the crew compartment inside the hull. The imported piece is the War Thunder x-ray interior
+        /// (Interior.obj), parsed by LpInterior and hung on the art's own pivots with the same anchors the
+        /// exterior groups use, so the engine sits behind the firewall and the carousel under the turret floor
+        /// without a second offset. It follows the game's own x-ray view.
+        /// </summary>
+        public static readonly bool ShowInterior = true;
+
+        /// <summary>
+        /// Set the protection from this model's geometry rather than the LEO2A3's: composite depths come from
+        /// that x-ray model's armour modules, scaled by the donor's own material factor. LpArmorLog reports
+        /// every layer at load.
+        /// </summary>
+        public static readonly bool WtArmor = true;
+
+        /// <summary>
+        /// Attach a heat signature source to the imported visual. Off because the donor's own source stays on
+        /// the unit, and two of them read as a brighter target than the 2A7V is.
+        /// </summary>
+        public static readonly bool AddHeatSource = false;
+
+        /// <summary>Draw the 2A7V's own graticule in the gunner's daylight sight instead of the donor's.</summary>
+        public static readonly bool ReplaceDayReticle = true;
+
+        /// <summary>
+        /// Make the roof MG a real weapon with its own mount, fire control and sight rather than decoration.
+        /// </summary>
+        public static readonly bool AddRoofGun = true;
+
+        /// <summary>
+        /// Apply the gun arc below; this is the switch that actually stops the barrel. GHPC clamps with
+        /// AimablePlatform.LocalEulerLimits and treats x == y, a pair of zeros included, as unlimited travel,
+        /// so re-stating the arc is what guarantees the barrel cannot run past the mount.
+        /// </summary>
+        public static readonly bool LimitMainGunElevation = true;
+
+        /// <summary>Highest elevation above horizontal, in degrees - the 2A7V's arc as War Thunder models it.</summary>
+        public const float GunElevationDegrees = 20f;
+
+        /// <summary>Lowest depression below horizontal, in degrees; negative.</summary>
+        public const float GunDepressionDegrees = -9f;
+
+        /// <summary>
+        /// Horizontal field of view of the roof MG sight, in degrees. The sight has no zoom, so this one figure
+        /// sets both the picture and how the graticule's width is scaled.
+        /// </summary>
+        public const float RoofGunSightFov = 20f;
+
+        /// <summary>
+        /// The gunner thermal's render target size. FLIRCamera draws into a target of exactly this size and
+        /// stretches it over the screen, and the vertical field is derived from the target's aspect, so the
+        /// donor's 2:1 ratio is kept. The donor authors 480 x 240, which is coarse at full screen.
+        /// </summary>
+        public static readonly Vector2Int ThermalSize = new Vector2Int(1280, 640);
+
+        /// <summary>
         /// Tread repeats per metre for the model's own track sheet, which only matters while
         /// UseDonorTrackArt is off: lp_track_uv.py reads the exported loop's v against forward as one period
         /// per 0.746 m.
         /// </summary>
         public const float TrackTreadsPerMetre = 0.746f;
 
-        /// <summary>Largest texture loaded from disk; the imported set and the donor's both ship at 2048.</summary>
-        public const int MaxTextureSize = 2048;
+        /// <summary>
+        /// Largest texture loaded from disk. The 2K kit - what ships in textures/ - is 2048; the 4K kit in
+        /// textures_uhq/ is 4096 square, which is also Unity's ceiling here, so the switch is the kit and the cap
+        /// together. A 4K sheet is 64 MB decoded RGBA32 before mips, about sixteen times the 2K one's footprint,
+        /// which is why 2K stays the default.
+        /// </summary>
+        public static int MaxTextureSize => UhdTextures ? 4096 : 2048;
 
         /// <summary>
         /// Target mean grey for the imported albedos. 0 keeps them as authored, which is right because
@@ -102,51 +173,33 @@ namespace Leopard2A7V
         public static string AssetDir =>
             System.IO.Path.Combine(MelonLoader.Utils.MelonEnvironment.ModsDirectory, "Leopard2A7V");
 
+        /// <summary>
+        /// "2k" or "4k", whatever the player typed: anything that is not plainly the 4K kit falls back to the 2K
+        /// one, so a typo costs detail instead of a magenta vehicle.
+        /// </summary>
+        public static string ResolutionName
+        {
+            get
+            {
+                string value = TextureResolution == null ? null : TextureResolution.Value;
+                if (string.IsNullOrEmpty(value)) return "2k";
+                value = value.Trim().ToLowerInvariant();
+                return value == "4k" || value == "uhq" || value == "4096" ? "4k" : "2k";
+            }
+        }
+
+        /// <summary>True when the 4K kit under textures_uhq/ is the one to bind.</summary>
+        public static bool UhdTextures => ResolutionName == "4k";
+
         public static void Create()
         {
             Category = MelonPreferences.CreateCategory("Leopard2A7V", "Leopard 2A7V tank model swap");
 
-            Enabled = Category.CreateEntry("Enabled", true, "Turns the mod off without uninstalling it");
-            FriendlyName = Category.CreateEntry("FriendlyName", "Leopard 2A7V", "Name this vehicle shows in the menus");
-            ConvertSourceUnit = Category.CreateEntry("ConvertSourceUnit", false,
-                "Also restyle the stock LEO2A3s, not just the new entry");
-            UseDonorRunningGear = Category.CreateEntry("UseDonorRunningGear", false,
-                "Keep the donor's wheels and tracks. Off builds the model's own road wheels on the donor bones");
-            UseDonorTrackArt = Category.CreateEntry("UseDonorTrackArt", true,
-                "Keep the donor's track loops. Only this shows a complete, rolling track");
-
-            // The imported compartment is the War Thunder x-ray interior (Interior.obj), parsed by LpInterior
-            // and hung on the art's own pivots with the same anchors the exterior groups use, so the engine
-            // sits behind the firewall and the carousel under the turret floor without a second offset.
-            ShowInterior = Category.CreateEntry("ShowInterior", true,
-                "Draw the crew compartment inside the hull. It follows the game's own x-ray view");
-
-            // Composite depths come from that x-ray model's armour modules, scaled by the donor's own
-            // material factor; off keeps the LEO2A3's measured armour. LpArmorLog reports every layer at load.
-            WtArmor = Category.CreateEntry("WtArmor", true,
-                "Set the armour thickness from this model's geometry instead of the donor's");
-
             Skin = Category.CreateEntry("Skin", "",
                 "Paint scheme: nato, desert, winter, parade. Empty keeps the factory scheme");
-            AddHeatSource = Category.CreateEntry("AddHeatSource", false, "Give the vehicle a heat signature source");
-            ReplaceDayReticle = Category.CreateEntry("ReplaceDayReticle", true,
-                "Draw the 2A7V graticule in the gunner's daylight sight");
 
-            // The size the gunner thermal renders at. FLIRCamera draws into a target of exactly this size and
-            // stretches it over the screen, and the vertical field is derived from the target's aspect, so keep
-            // the donor's 2:1 ratio. The donor authors 480x240, which is coarse at full screen.
-            ThermalResolution = Category.CreateEntry("ThermalResolution", "1280,640",
-                "The gunner's thermal picture as \"width,height\" in pixels; keep the ratio 2:1");
-            LimitMainGunElevation = Category.CreateEntry("LimitMainGunElevation", true,
-                "Apply the gun arc below; this is the switch that actually stops the barrel");
-            GunElevationDegrees = Category.CreateEntry("GunElevationDegrees", 20f,
-                "Highest elevation above horizontal, in degrees");
-            GunDepressionDegrees = Category.CreateEntry("GunDepressionDegrees", -9f,
-                "Lowest depression below horizontal, in degrees; negative");
-            AddRoofGun = Category.CreateEntry("AddRoofGun", true,
-                "Make the roof MG a real weapon with its own mount, fire control and sight");
-            RoofGunSightFov = Category.CreateEntry("RoofGunSightFov", 20f,
-                "Horizontal field of view of the roof MG sight, in degrees; wider tracks aircraft more easily");
+            TextureResolution = Category.CreateEntry("TextureResolution", "2k",
+                "Texture detail: 2k or 4k. 4k is sharper up close but needs far more video memory and load time");
 
             MelonPreferences.Save();
         }
@@ -159,22 +212,6 @@ namespace Leopard2A7V
                 string value = Skin == null ? null : Skin.Value;
                 return string.IsNullOrEmpty(value) ? string.Empty : value.Trim().ToLowerInvariant();
             }
-        }
-
-        /// <summary>
-        /// The gunner thermal's render target size. A blank or unusable entry falls back to the donor's own
-        /// 480 x 240, which is what the game authors its imagers at.
-        /// </summary>
-        public static Vector2Int ThermalSize => ParseResolution(ThermalResolution.Value, new Vector2Int(480, 240));
-
-        public static Vector2Int ParseResolution(string value, Vector2Int fallback)
-        {
-            if (string.IsNullOrEmpty(value)) return fallback;
-            string[] parts = value.Split(',');
-            if (parts.Length != 2) return fallback;
-            if (!int.TryParse(parts[0].Trim(), out int width) || !int.TryParse(parts[1].Trim(), out int height))
-                return fallback;
-            return new Vector2Int(Mathf.Clamp(width, 32, 3840), Mathf.Clamp(height, 32, 2160));
         }
     }
 }

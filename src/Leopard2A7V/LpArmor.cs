@@ -174,9 +174,10 @@ namespace Leopard2A7V
             harmony.Patch(target, postfix: new HarmonyMethod(typeof(LpArmor), postfix));
         }
 
-        public static void Apply(GameObject unitRoot)
+        public static bool Apply(GameObject unitRoot)
         {
-            if (!LpConfig.WtArmor.Value || unitRoot == null) return;
+            if (!LpConfig.WtArmor || unitRoot == null) return true;
+            if (_Reported.Contains(unitRoot.name)) return true;
 
             var used = new HashSet<string>(StringComparer.Ordinal);
             var sb = new StringBuilder();
@@ -214,6 +215,10 @@ namespace Leopard2A7V
                 measured++;
             }
 
+            bool hadPieces = stored.Length + raycast.Length > 0;
+            if (!hadPieces) return false;
+            _Reported.Add(unitRoot.name);
+
             List<string> unmatched = new List<string>();
             foreach (string key in Table.Keys)
             {
@@ -227,7 +232,14 @@ namespace Leopard2A7V
                             stored.Length + " uniform + " + raycast.Length + " raycast-measured" + sb);
 
             if (unmatched.Count > 0) DumpIdentities(stored, raycast);
+            return true;
         }
+
+        /// <summary>
+        /// Units whose armour has been written and reported. The write is worth repeating only while a unit
+        /// still has no armour at all, which is what the spawn looks like before the art pass fills it in.
+        /// </summary>
+        private static readonly HashSet<string> _Reported = new HashSet<string>(StringComparer.Ordinal);
 
         /// <summary>
         /// When zones went unmatched this is the only way to find out what the runtime pieces are actually

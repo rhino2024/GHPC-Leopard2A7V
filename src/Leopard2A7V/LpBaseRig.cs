@@ -119,11 +119,11 @@ namespace Leopard2A7V
 
             foreach (string fragment in WheelArtFragments)
                 if (path.IndexOf(fragment, StringComparison.OrdinalIgnoreCase) >= 0)
-                    return !LpConfig.UseDonorRunningGear.Value;
+                    return !LpConfig.UseDonorRunningGear;
 
             foreach (string fragment in TrackArtFragments)
                 if (path.IndexOf(fragment, StringComparison.OrdinalIgnoreCase) >= 0)
-                    return !(LpConfig.UseDonorRunningGear.Value || LpConfig.UseDonorTrackArt.Value ||
+                    return !(LpConfig.UseDonorRunningGear || LpConfig.UseDonorTrackArt ||
                              LpTracks.DonorFallback);
             return true;
         }

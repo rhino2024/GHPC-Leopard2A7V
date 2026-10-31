@@ -350,9 +350,29 @@ namespace Leopard2A7V
             return path;
         }
 
+        /// <summary>
+        /// The 4K kit is the same sheets re-exported at twice the resolution, kept in a parallel folder so the
+        /// 2K delivery stays untouched and either can be shipped or deleted without a rebuild. Only files the kit
+        /// actually carries are redirected: it has no MG mount sheet and its ambient-occlusion bakes are the same
+        /// 512-wide ones, so those stay on the 2K originals instead of going missing.
+        /// </summary>
+        private static string ResolveResolution(string path)
+        {
+            if (!LpConfig.UhdTextures) return path;
+
+            string directory = Path.GetDirectoryName(path);
+            if (directory == null ||
+                !string.Equals(Path.GetFileName(directory), "textures", StringComparison.OrdinalIgnoreCase))
+                return path;
+
+            string candidate = Path.Combine(Path.GetDirectoryName(directory), "textures_uhq", Path.GetFileName(path));
+            return File.Exists(candidate) ? candidate : path;
+        }
+
         private static Texture2D LoadTexture(string path, bool linear, Pack pack, bool isAlbedo = false)
         {
             if (isAlbedo) path = ResolveSkin(path);
+            path = ResolveResolution(path);
             string key = path + "|" + pack + (pack == Pack.Normal ? "|" + _normalMode : string.Empty)
                 + "|" + _maxTextureSize
                 + "|" + (isAlbedo ? LpConfig.AlbedoLuminance : -1);

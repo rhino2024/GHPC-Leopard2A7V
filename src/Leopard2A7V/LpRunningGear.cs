@@ -293,9 +293,9 @@ namespace Leopard2A7V
         /// <summary>Gives the loops to whoever is going to draw them, then reports which that was.</summary>
         private static void AttachTracks(Transform hullPivot, Transform unitRoot, int loops)
         {
-            if (!LpConfig.UseDonorTrackArt.Value) LpTracks.Attach(hullPivot, unitRoot);
+            if (!LpConfig.UseDonorTrackArt) LpTracks.Attach(hullPivot, unitRoot);
             MelonLogger.Msg(Tag + $" {loops} track loop(s) " +
-                            (LpConfig.UseDonorTrackArt.Value
+                            (LpConfig.UseDonorTrackArt
                                 ? "left to the donor's animated art"
                                 : "rebuilt to scroll, " + LpTracks.Status));
         }

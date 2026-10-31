@@ -18,7 +18,6 @@ namespace Leopard2A7V
 
         public static void RegisterEverywhere()
         {
-            if (!LpConfig.Enabled.Value) return;
             var lookups = Resources.FindObjectsOfTypeAll<UnitPrefabLookupScriptable>();
             int count = 0;
             foreach (UnitPrefabLookupScriptable lookup in lookups)
@@ -32,7 +31,6 @@ namespace Leopard2A7V
 
         public static bool Register(UnitPrefabLookupScriptable lookup)
         {
-            if (!LpConfig.Enabled.Value) return false;
             if (lookup == null || lookup.AllUnits == null) return false;
 
             string sourceKey = LpConfig.SourceUnitKey;
@@ -63,7 +61,7 @@ namespace Leopard2A7V
             var clone = new UnitPrefabLookupScriptable.UnitPrefabMetadata
             {
                 Name = LpConfig.UnitKey,
-                FriendlyName = LpConfig.FriendlyName.Value,
+                FriendlyName = LpConfig.FriendlyName,
                 PrefabReference = source.PrefabReference,
                 BaseAmmoClipsReference = source.BaseAmmoClipsReference,
                 // The donor's decal layout is UV-baked for its own hull, so the imported art gets none.

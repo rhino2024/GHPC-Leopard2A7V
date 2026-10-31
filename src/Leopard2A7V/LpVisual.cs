@@ -111,7 +111,7 @@ namespace Leopard2A7V
                 result.Hull = MakePivot(hullBoneOrRoot, "L2A7V_HullPivot", hullLocal);
                 AttachGroup(result.Hull, "Hull", LpGroup.Hull, Vector3.zero);
 
-                if (!LpConfig.UseDonorRunningGear.Value)
+                if (!LpConfig.UseDonorRunningGear)
                     LpRunningGear.Attach(result.Hull, unit);
 
                 result.Turret = MakePivot(turretBone, "L2A7V_TurretPivot", Vector3.zero);
@@ -125,7 +125,7 @@ namespace Leopard2A7V
                 result.CommanderGear = MakePivot(turretBone, "L2A7V_CupolaPivot", Vector3.zero);
                 AttachParts(result.CommanderGear, "CommanderGear",
                     part => part.Group == LpGroup.CommanderGear &&
-                          !(LpConfig.AddRoofGun.Value && LpRoofGun.IsRoofGunPart(part.ObjectName)), ring);
+                          !(LpConfig.AddRoofGun && LpRoofGun.IsRoofGunPart(part.ObjectName)), ring);
 
                 result.Gun = MakePivot(mantletBone, "L2A7V_GunPivot", Vector3.zero);
                 AttachGroup(result.Gun, "Gun", LpGroup.Gun, trunnion);
@@ -143,7 +143,7 @@ namespace Leopard2A7V
             LpSightView.Attach(unitRoot, result);
             LpThermal.Apply(unitRoot);
             LpBaseRig.Apply(unit);
-            LpArmor.Apply(unitRoot);
+            LpDonorArt.Request(unitRoot);
             LpArmorLog.Apply(unitRoot);
             ApplyHeat(result);
             LpDiagnostics.DumpOnce(unitRoot);
@@ -310,7 +310,7 @@ namespace Leopard2A7V
 
         private static void ApplyHeat(Assembly art)
         {
-            if (!LpConfig.AddHeatSource.Value || art.Hull == null) return;
+            if (!LpConfig.AddHeatSource || art.Hull == null) return;
             var source = art.Hull.gameObject.AddComponent<HeatSource>();
             if (HeatBackingField != null) HeatBackingField.SetValue(source, float.NaN);
             source.Heat = 0.85f;

@@ -13,9 +13,10 @@ namespace Leopard2A7V
     /// DM23; this vehicle carries the L/55 and fires DM53, and both facts reach the player through three
     /// pieces the game reads separately: the weapon codex (the name on the HUD), the clip (the round's name
     /// and the shells sitting in the rack) and the AmmoType (penetration, velocity, flight model and the
-    /// ballistic computer's firing table). The gun is re-authored in place and the round is added to that
-    /// list as its own type, ahead of the donor's, so the vehicle loads DM53 by default while nothing the
-    /// donor was built with stops being selectable.
+    /// ballistic computer's firing table). The gun is re-authored in place and the donor's APFSDS row is
+    /// answered by DM53 at the same position, so the vehicle has no DM23 left to load, select or count: the
+    /// round list keeps the donor's length, its HEAT row stays behind the sabot as key 2, and the racks keep
+    /// the slot counts they were authored with.
     /// The feed, both racks, the reload
     /// stages and the recoil impulse stay the donor's, so the gun still reloads at its authored 6 seconds,
     /// which is also what an aced load in War Thunder takes.
@@ -90,12 +91,12 @@ namespace Leopard2A7V
         /// racks from that copy in Start and whenever the player asks for a refill, so a snapshot left at
         /// the donor's two entries would repopulate the vehicle with DM23 and DM12 only, however the
         /// loadout list reads. The loadout's own list is the stable statement of what the vehicle carries -
-        /// the live gun counts shrink as rounds are fired - so that is what the snapshot is rebuilt from,
-        /// and only for a unit whose first clip is ours.
+        /// the live gun counts shrink as rounds are fired - so that is what the snapshot is rebuilt from, and
+        /// only for a unit whose list holds our clip.
         /// </summary>
         private static void RefreshAmmoSnapshot(object __instance)
         {
-            if (__instance == null || AmmoCountsOriginalField == null || !LpConfig.Enabled.Value) return;
+            if (__instance == null || AmmoCountsOriginalField == null) return;
             var component = __instance as Component;
             if (component == null) return;
 
@@ -104,9 +105,17 @@ namespace Leopard2A7V
             AmmoClipCodexScriptable[] clips = loadout.LoadedAmmoList.AmmoClips;
             int[] counts = loadout.TotalAmmoCounts;
             if (clips == null || counts == null || clips.Length == 0 || clips.Length != counts.Length) return;
-            if (!ReferenceEquals(clips[0], _clip)) return;
+            if (IndexOfClip(clips, _clip) < 0) return;
 
             AmmoCountsOriginalField.SetValue(__instance, (int[])counts.Clone());
+        }
+
+        private static int IndexOfClip(AmmoClipCodexScriptable[] clips, AmmoClipCodexScriptable wanted)
+        {
+            if (clips == null || wanted == null) return -1;
+            for (int i = 0; i < clips.Length; i++)
+                if (ReferenceEquals(clips[i], wanted)) return i;
+            return -1;
         }
 
         private static void VisualSpawned(AmmoType type, GameObject __result)
@@ -115,183 +124,173 @@ namespace Leopard2A7V
                 __result.SetActive(true);
         }
 
-        public static void Apply(GameObject root)
+        /// <summary>
+        /// Re-authors this unit's gun and round. Returns whether the unit is finished with: the donor's MainGun
+        /// arrives with its art pass, a couple of seconds after the spawn, so a unit that has no gun yet has to
+        /// be handed back to LpDonorArtWatch.
+        /// </summary>
+        public static bool Apply(GameObject root)
         {
-            if (!LpConfig.Enabled.Value || root == null || _failed) return;
+            if (root == null || _failed) return true;
 
             var weapons = root.GetComponent<WeaponsManager>();
             var loadout = root.GetComponent<LoadoutManager>();
             if (weapons == null || loadout == null || weapons.Weapons == null || weapons.Weapons.Length == 0)
-                return;
+                return false;
 
             int index = loadout.WeaponIndex;
-            if (index < 0 || index >= weapons.Weapons.Length) return;
+            if (index < 0 || index >= weapons.Weapons.Length) return false;
             WeaponSystemInfo entry = weapons.Weapons[index];
-            if (entry == null || entry.Weapon == null) return;
+            if (entry == null || entry.Weapon == null) return false;
 
             AmmoClipCodexScriptable[] clips = loadout.LoadedAmmoList.AmmoClips;
-            if (clips == null || clips.Length == 0) return;
+            if (clips == null || clips.Length == 0) return false;
 
             int sabot = FindSabotClip(clips);
             if (sabot < 0)
             {
                 MelonLogger.Warning("[L2A7V] the donor loadout holds no APFSDS clip, keeping its ammunition");
-                return;
+                return true;
             }
 
-            if (EnsureClip(clips[sabot]) == null) return;
+            if (EnsureClip(clips[sabot]) == null) return true;
 
-            int firstCount = PrependClip(loadout, clips);
-            bool added = firstCount >= 0;
+            int firstCount = SubstituteSabot(loadout, clips, sabot);
             entry.Name = WeaponEntryName;
             RenameWeapon(entry.Weapon);
-            SyncMainGun(root, added ? firstCount : 0);
+            bool gunSynced = SyncMainGun(root, firstCount);
 
             // The list was registered against the donor's clips in Awake, and Start reads the ballistics
             // out of this repository, so the new round has to be in it before either of them runs.
             if (RegisterBallistics != null) RegisterBallistics.Invoke(loadout, null);
 
-            if (added)
-                MelonLogger.Msg($"[L2A7V] main gun set to {WeaponEntryName}: {ShellName} " +
-                                $"({PenetrationMm:F0} mm, {MuzzleVelocity:F0} m/s) is round 1 of " +
-                                $"{clips.Length + 1}; the donor's {clips.Length} type(s) follow it");
+            if (gunSynced)
+            {
+                int dm23 = CountDonorSabot(clips, loadout.TotalAmmoCounts);
+                MelonLogger.Msg($"[L2A7V] main gun set to {WeaponEntryName}: the donor's APFSDS row " +
+                                $"(was DM23) now carries {ShellName} ({PenetrationMm:F0} mm, " +
+                                $"{MuzzleVelocity:F0} m/s) at key {sabot + 1}; " +
+                                $"{clips.Length} round type(s) in the loadout, {dm23} DM23 round(s) left" +
+                                (dm23 == 0 ? string.Empty : " - see the rows above"));
+            }
+            return gunSynced;
         }
 
         /// <summary>
-        /// Puts the imported round at the front of the loadout's clip list, which is what makes it the round
-        /// the vehicle starts with: the gun opens on index 0 and the racks are filled in list order, so the
-        /// position here is the choice the player would otherwise have to make by hand every spawn. The
-        /// donor's rounds keep their order behind it and stay selectable on keys 2 and 3.
-        ///
-        /// Inserting instead of replacing moves every position after it, and the loadout stores several
-        /// things by position rather than by clip: a rack's fixed allotment, a rack's forbidden indices, a
-        /// slot's fixed clip choice, a rack's initial clips and its restock capacities. All of those are
-        /// shifted here so authoring on a donor that uses them still points at the round it was written for.
-        /// The Leopard 2A3 uses none of them; the shift is what keeps this honest if the donor ever changes.
+        /// Retry entry for the deferred pass: the gun's own round list, which is the one thing the spawn
+        /// cannot write because MainGun arrives with the donor's art pass. The loadout substitution has
+        /// already run by then, so the count is not passed - the row keeps the number the donor authored for
+        /// it, which is what the loadout carries for that row too.
         /// </summary>
-        private static int PrependClip(LoadoutManager loadout, AmmoClipCodexScriptable[] clips)
+        public static bool ApplyGunList(GameObject root)
         {
-            if (clips.Length > 0 && ReferenceEquals(clips[0], _clip)) return -1;
+            if (root == null || _failed) return true;
+            return SyncMainGun(root, -1);
+        }
 
-            int[] counts = loadout.TotalAmmoCounts ?? Array.Empty<int>();
+        /// <summary>
+        /// Counts the rounds still carried under the donor's APFSDS name, so the log says in one number
+        /// whether DM23 really left the vehicle.
+        /// </summary>
+        private static int CountDonorSabot(AmmoClipCodexScriptable[] clips, int[] counts)
+        {
             int total = 0;
             for (int i = 0; i < clips.Length; i++)
-                if (i < counts.Length) total += counts[i];
-
-            // The racks only hold as many clips as they have slots for - forty two on this vehicle - and
-            // SpawnCurrentLoadout drops anything past that with an error, so the new round's share comes out
-            // of the types already loaded rather than on top of them. An empty loadout stays empty and only
-            // gains its zero.
-            int share = total > 0 ? Mathf.Max(1, total / (clips.Length + 1)) : 0;
-
-            var grown = new AmmoClipCodexScriptable[clips.Length + 1];
-            grown[0] = _clip;
-            Array.Copy(clips, 0, grown, 1, clips.Length);
-
-            var newCounts = new int[grown.Length];
-            int kept = 0;
-            for (int i = 0; i < clips.Length; i++)
             {
-                int own = i < counts.Length ? counts[i] : 0;
-                newCounts[i + 1] = total > 0 ? own * (total - share) / total : 0;
-                kept += newCounts[i + 1];
+                AmmoClipCodexScriptable clip = clips[i];
+                string name = clip == null || clip.ClipType == null ? null : clip.ClipType.Name;
+                if (name == null || !name.Contains("DM23")) continue;
+                total += counts != null && counts.Length > i ? counts[i] : 0;
             }
-            // Integer division rounds every type down; the clips it loses are the new round's.
-            newCounts[0] = share + (total - kept - share);
-
-            loadout.TotalAmmoCounts = newCounts;
-            loadout.LoadedAmmoList.AmmoClips = grown;
-            ShiftRackIndices(loadout);
-            return newCounts[0];
+            return total;
         }
 
         /// <summary>
-        /// Moves every index-keyed piece of rack authoring one slot to the right, to match the round that
-        /// went in at 0. A fixed allotment written for the new round is left at zero: that row is its own
-        /// statement of what this rack holds, and pinning a share it never asked for would change a rack
-        /// total the author counted.
+        /// Answers the donor's APFSDS row with the imported round at the same position.
+        ///
+        /// Substituting rather than inserting is what keeps DM23 out of the vehicle entirely: the row is the
+        /// one the donor's racks, reload logic and ballistics registry were authored against, so its slot
+        /// count, its index in every rack's fixed choice and its key on the player's number row all stay
+        /// valid without any of them being rewritten. The count travels with the row, so the sabot share of
+        /// the loadout (21 of 42 on this donor) is the number of DM53 the vehicle carries.
         /// </summary>
-        private static void ShiftRackIndices(LoadoutManager loadout)
+        private static int SubstituteSabot(LoadoutManager loadout, AmmoClipCodexScriptable[] clips, int sabot)
         {
-            if (loadout.RackLoadouts == null) return;
-            foreach (LoadoutManager.RackLoadout rack in loadout.RackLoadouts)
-            {
-                if (rack == null) continue;
+            if (ReferenceEquals(clips[sabot], _clip))
+                return -1;
 
-                if (rack.AmmoCounts != null && rack.AmmoCounts.Length != 0)
-                    rack.AmmoCounts = Insert(rack.AmmoCounts, 0);
-
-                if (rack.ForbiddenAmmoIndices != null && rack.ForbiddenAmmoIndices.Length != 0)
-                    for (int i = 0; i < rack.ForbiddenAmmoIndices.Length; i++)
-                        rack.ForbiddenAmmoIndices[i]++;
-
-                if (rack.OverrideInitialClips != null && rack.OverrideInitialClips.Length != 0)
-                {
-                    var start = new AmmoClipCodexScriptable[rack.OverrideInitialClips.Length + 1];
-                    start[0] = _clip;
-                    Array.Copy(rack.OverrideInitialClips, 0, start, 1, rack.OverrideInitialClips.Length);
-                    rack.OverrideInitialClips = start;
-                }
-
-                if (rack.AdditiveRestockCapacities != null && rack.AdditiveRestockCapacities.Length != 0)
-                    rack.AdditiveRestockCapacities = Insert(rack.AdditiveRestockCapacities, 0);
-
-                if (rack.FixedChoices == null) continue;
-                foreach (LoadoutManager.RackLoadoutFixedChoice choice in rack.FixedChoices)
-                    if (choice != null) choice.AmmoClipIndex++;
-            }
-        }
-
-        private static int[] Insert(int[] source, int value)
-        {
-            var grown = new int[source.Length + 1];
-            grown[0] = value;
-            Array.Copy(source, 0, grown, 1, source.Length);
-            return grown;
+            int[] counts = loadout.TotalAmmoCounts;
+            int held = counts != null && counts.Length > sabot ? counts[sabot] : 0;
+            clips[sabot] = _clip;
+            return held;
         }
 
         /// <summary>
         /// Keeps the gun's own round list in step with the loadout's. MainGun builds its ammo from a
-        /// serialized array on the prefab and opens on index 0, so a round that only exists in the loadout
-        /// can be carried in the racks but never selected or chambered. The array is grown the same way -
-        /// ours first - and the counts are re-shaped to match, because the gun rewrites them by index once
-        /// the racks are filled.
+        /// serialized array on the prefab and chambers from the index the player picks, so a round that only
+        /// exists in the loadout can be carried in the racks but never fired. The swap is done in place, on
+        /// the gun's APFSDS row: the list keeps its length, every other row keeps its key, and DM23 stops
+        /// being selectable because nothing in the vehicle names it any more.
         ///
         /// The separate snapshot VehicleInfo fills the racks from is handled by RefreshAmmoSnapshot, which
         /// runs in front of that fill; doing it here too would only duplicate it for the spawn.
         /// </summary>
-        private static void SyncMainGun(GameObject root, int firstCount)
+        private static bool SyncMainGun(GameObject root, int firstCount)
         {
-            if (_codex == null || _shell == null || root == null) return;
+            if (_codex == null || _shell == null || root == null) return false;
             MainGun gun = root.GetComponent<MainGun>();
-            if (gun == null)
-            {
-                MelonLogger.Warning("[L2A7V] this unit has no MainGun, so the imported round stays in the " +
-                                    "loadout only and cannot be selected");
-                return;
-            }
+            if (gun == null) return false;
 
             AmmoCodexScriptable[] ammo = gun.Ammo ?? Array.Empty<AmmoCodexScriptable>();
-            if (ammo.Length != 0 && ReferenceEquals(ammo[0], _codex)) return;
+            if (ammo.Length == 0)
+            {
+                MelonLogger.Warning("[L2A7V] this unit's MainGun carries no round list, so the imported round " +
+                                    "is in the loadout only and cannot be selected");
+                return true;
+            }
 
-            var grown = new AmmoCodexScriptable[ammo.Length + 1];
-            grown[0] = _codex;
-            Array.Copy(ammo, 0, grown, 1, ammo.Length);
-            gun.Ammo = grown;
+            int slot = FindSabotSlot(ammo);
+            if (slot < 0)
+            {
+                MelonLogger.Warning("[L2A7V] the donor gun lists no APFSDS row, so " + ShellName +
+                                    " stays in the loadout only and cannot be selected");
+                return true;
+            }
+            if (ReferenceEquals(ammo[slot], _codex)) return true;
 
-            var available = new AmmoType[grown.Length];
-            for (int i = 0; i < grown.Length; i++)
-                available[i] = grown[i] == null ? null : grown[i].AmmoType;
+            ammo[slot] = _codex;
+            gun.Ammo = ammo;
+
+            var available = new AmmoType[ammo.Length];
+            for (int i = 0; i < ammo.Length; i++)
+                available[i] = ammo[i] == null ? null : ammo[i].AmmoType;
             gun.AvailableAmmo = available;
 
-            var counts = gun.AmmoCounts ?? Array.Empty<int>();
-            var grownCounts = new int[grown.Length];
-            grownCounts[0] = firstCount;
-            Array.Copy(counts, 0, grownCounts, 1, Mathf.Min(counts.Length, grown.Length - 1));
-            gun.AmmoCounts = grownCounts;
+            int[] counts = gun.AmmoCounts;
+            bool wroteCount = firstCount >= 0 && counts != null && counts.Length == ammo.Length;
+            if (wroteCount) counts[slot] = firstCount;
 
-            MelonLogger.Msg($"[L2A7V] gun round list now opens with {ShellName} ({firstCount} rounds): the " +
-                            $"donor's {ammo.Length} type(s) shifted to key 2..{grown.Length}");
+            MelonLogger.Msg($"[L2A7V] gun round list: the donor's APFSDS row {slot + 1} of " +
+                            $"{ammo.Length} is now {ShellName}" +
+                            (wroteCount ? $" ({firstCount} rounds)" : string.Empty));
+            return true;
+        }
+
+        /// <summary>
+        /// The gun's APFSDS row, by what the round is rather than by position: this donor fires DM23 first
+        /// and DM12 second, but a rebuilt prefab or another nation's vehicle would not have to.
+        /// </summary>
+        private static int FindSabotSlot(AmmoCodexScriptable[] ammo)
+        {
+            for (int i = 0; i < ammo.Length; i++)
+            {
+                if (ReferenceEquals(ammo[i], _codex)) return i;
+                AmmoType type = ammo[i] == null ? null : ammo[i].AmmoType;
+                if (type != null && type.Category == AmmoType.AmmoCategory.Penetrator &&
+                    type.ShortName == AmmoType.AmmoShortName.Sabot)
+                    return i;
+            }
+            return -1;
         }
 
         /// <summary>
@@ -446,10 +445,10 @@ namespace Leopard2A7V
         /// </summary>
         public static void ApplyGunArc(GameObject root)
         {
-            if (!LpConfig.Enabled.Value || root == null || !LpConfig.LimitMainGunElevation.Value) return;
+            if (root == null || !LpConfig.LimitMainGunElevation) return;
 
-            float elevation = Mathf.Abs(LpConfig.GunElevationDegrees.Value);
-            float depression = -Mathf.Abs(LpConfig.GunDepressionDegrees.Value);
+            float elevation = Mathf.Abs(LpConfig.GunElevationDegrees);
+            float depression = -Mathf.Abs(LpConfig.GunDepressionDegrees);
 
             GHPC.AimablePlatform gun = FindMainGunPlatform(root);
             if (gun == null)
@@ -546,8 +545,8 @@ namespace Leopard2A7V
         public void Init(GHPC.AimablePlatform platform)
         {
             _platform = platform;
-            _elevationLimit = Mathf.Abs(LpConfig.GunElevationDegrees.Value);
-            _depressionLimit = -Mathf.Abs(LpConfig.GunDepressionDegrees.Value);
+            _elevationLimit = Mathf.Abs(LpConfig.GunElevationDegrees);
+            _depressionLimit = -Mathf.Abs(LpConfig.GunDepressionDegrees);
         }
 
         private void Update()
