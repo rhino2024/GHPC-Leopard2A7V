@@ -170,7 +170,11 @@ namespace Leopard2A7V
             entry.Name = WeaponEntryName;
             RenameWeapon(entry.Weapon);
             bool gunSynced = SyncMainGun(root, firstCount);
-            AppendDm73(root);
+            // DM73 is built but not carried yet: appending a third ammo type breaks the live loadout
+            // (DM73 and the HEAT row both end up with no rounds and no restock), because the racks and
+            // the vehicle's refill snapshot are authored for exactly two types. Re-enable this only
+            // together with a full rack rebalance.
+            // AppendDm73(root);
 
             // The list was registered against the donor's clips in Awake, and Start reads the ballistics
             // out of this repository, so the new round has to be in it before either of them runs.
@@ -251,12 +255,23 @@ namespace Leopard2A7V
             loadout.LoadedAmmoTypes = newClips;
             loadout.TotalAmmoCounts = newCounts;
 
-            int racks = 0;
+            int racks = 0, carried = 0;
             foreach (LoadoutManager.RackLoadout rack in loadout.RackLoadouts ?? Array.Empty<LoadoutManager.RackLoadout>())
             {
                 if (rack == null || rack.AmmoCounts == null) continue;
                 var rackCounts = new int[newClips.Length];
                 Array.Copy(rack.AmmoCounts, rackCounts, Mathf.Min(rack.AmmoCounts.Length, newClips.Length));
+
+                // The rack's own array indexes ammo types exactly like the loadout's, so the new slot starts
+                // at zero and the rack would never carry a DM73 at all. Taking the rounds out of this rack's
+                // DM53 slot is what actually puts them in the vehicle.
+                if (rackCounts.Length > 0 && rackCounts[0] > 0)
+                {
+                    int moved = Mathf.Min(rackCounts[0], 2);
+                    rackCounts[0] -= moved;
+                    rackCounts[newClips.Length - 1] += moved;
+                    carried += moved;
+                }
                 rack.AmmoCounts = rackCounts;
                 racks++;
             }
@@ -277,11 +292,12 @@ namespace Leopard2A7V
                 if (gun.AmmoCounts != null)
                     Array.Copy(gun.AmmoCounts, gunCounts, Mathf.Min(gun.AmmoCounts.Length, ammo.Length));
                 gunCounts[ammo.Length - 1] = take;
+                if (gunCounts.Length > 1 && gunCounts[0] >= take) gunCounts[0] -= take;
                 gun.AmmoCounts = gunCounts;
             }
 
             MelonLogger.Msg($"[L2A7V] {Dm73Name} added beside {ShellName}: {take} round(s) taken from the " +
-                            $"DM53 row, {racks} rack(s) extended to {newClips.Length} type(s)");
+                            $"DM53 row, {carried} placed in {racks} rack(s), each extended to {newClips.Length} type(s)");
         }
 
         /// <summary>
