@@ -11,6 +11,7 @@ using GHPC.Weaponry;
 using HarmonyLib;
 using MelonLoader;
 using Reticle;
+using GHPC.Player;
 using UnityEngine;
 
 namespace Leopard2A7V
@@ -563,6 +564,8 @@ namespace Leopard2A7V
         private float _parentYaw;
         private float _parentPitch;
         private bool _haveParent;
+        private bool _overrideTurret;
+        private AimablePlatform _turretPlatform;
         private float _nextMount;
 
         private void Update()
@@ -571,6 +574,11 @@ namespace Leopard2A7V
             if (manager == null || Slot == null) return;
 
             if (!Mounted) MountWhenReady();
+
+            // Every unit runs its own toggle, so without this a Z press is handled by all of them and the last
+            // one to call the camera manager wins - which is how the commander's sight of a teammate's tank
+            // could come up instead. Only the unit the player is driving answers the key.
+            if (!IsPlayerUnit()) return;
 
             if (Input.GetKeyDown(KeyCode.Z))
             {
@@ -620,7 +628,32 @@ namespace Leopard2A7V
                 if (!ours) _inside = false;
             }
 
-            if (_inside && Input.GetKeyDown(KeyCode.T)) SwitchThermal();
+            // G, not T: the game uses T for the white-hot/black-hot polarity while the sight is on
+            // thermal, so sharing it made one press change the polarity and drop back to daylight.
+            if (Input.GetKeyDown(KeyCode.B))
+            {
+                _overrideTurret = !_overrideTurret;
+                MelonLogger.Msg("[L2A7V] commander override " + (_overrideTurret ? "on" : "off"));
+                if (!_overrideTurret) ReleaseOverride();
+            }
+
+            if (_overrideTurret && _inside) DriveOverride();
+            else if (_overrideTurret && !_inside) ReleaseOverride();
+
+            // Wheel, like the gunner's sight: the custom slot is not part of the game's zoom bindings, so the
+            // stops have to be cycled here. Up zooms in, down zooms out.
+            if (_inside)
+            {
+                float wheel = Input.GetAxisRaw("Mouse ScrollWheel");
+                if (Mathf.Abs(wheel) > 0.001f && Slot != null) Slot.CycleZoom(wheel > 0f);
+            }
+
+            // Polarity on Ctrl+T rather than the game's bare T, which collides with the thermal channel key on
+            // other sights. The game's own T is swallowed by the patch installed with this mod.
+            bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
+            if (_inside && ctrl && Input.GetKeyDown(KeyCode.T) && Slot != null) Slot.ToggleFLIRPolarity();
+
+            if (_inside && Input.GetKeyDown(ThermalKeyCode())) SwitchThermal();
 
             if (_inside)
             {
@@ -685,6 +718,43 @@ namespace Leopard2A7V
         /// front of this eyepiece, and scaling the node rather than disabling the renderer is what survives the
         /// vehicle's own visibility pass putting renderers back on.
         /// </summary>
+        /// <summary>True when this toggle belongs to the vehicle the player is driving.</summary>
+        private bool IsPlayerUnit()
+        {
+            PlayerInput input = PlayerInput.Instance;
+            if (input == null) return false;
+            Unit current = input.CurrentPlayerUnit;
+            return current != null && Unit != null && current == Unit;
+        }
+
+        private AimablePlatform TurretPlatform()
+        {
+            if (_turretPlatform != null) return _turretPlatform;
+            Unit unit = Unit == null ? null : Unit.GetComponent<Unit>();
+            if (unit == null) return null;
+            foreach (AimablePlatform platform in unit.GetComponentsInChildren<AimablePlatform>(true))
+            {
+                if (platform == null || platform.Transform == null) continue;
+                if (platform.Axis.ToString() != "Y") continue;
+                _turretPlatform = platform;
+                break;
+            }
+            return _turretPlatform;
+        }
+
+        private void DriveOverride()
+        {
+            AimablePlatform platform = TurretPlatform();
+            if (platform == null || Sight == null) return;
+            platform.SetAimVector(Sight.forward, true, true);
+        }
+
+        private void ReleaseOverride()
+        {
+            AimablePlatform platform = TurretPlatform();
+            if (platform != null) platform.UnsetAimVector();
+        }
+
         private void HideHeadArt()
         {
             if (Art == null) return;
@@ -699,6 +769,14 @@ namespace Leopard2A7V
         /// and that mode reaches both the picture and the environment from swapCameras alone, so a commander
         /// looking through his own sight with the free-look camera off would have nothing change.
         /// </summary>
+        /// <summary>The channel key as a KeyCode, so a collision with a game binding is a setting away.</summary>
+        private static KeyCode ThermalKeyCode()
+        {
+            string name = LpConfig.ThermalKey == null ? "K" : (LpConfig.ThermalKey.Value ?? "K").Trim();
+            KeyCode key;
+            return System.Enum.TryParse(name, true, out key) ? key : KeyCode.K;
+        }
+
         private void SwitchThermal()
         {
             if (!LpCommanderThermal.Available())

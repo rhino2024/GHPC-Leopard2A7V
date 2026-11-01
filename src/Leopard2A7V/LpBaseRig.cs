@@ -58,6 +58,42 @@ namespace Leopard2A7V
         /// </summary>
         private static readonly string[] TrackArtFragments = { "leo2_tracks" };
 
+        /// <summary>
+        /// Detail parts of the donor hull that a renderer switch cannot hide.
+        ///
+        /// The LEO2 hull is a skinned mesh: its skirts, fenders and grilles are not separate renderers but
+        /// pieces of one skin driven by bones. Collapsing those bones is the only way to pull them inside the
+        /// new hull - the same trick the T-90A mod uses on the T-72M1 (it also trims the mesh, which needs a
+        /// rebuilt asset; collapsing is enough to stop the old shape showing).
+        /// </summary>
+        internal static int CollapseSkinDetailBones(Transform unitRoot)
+        {
+            int collapsed = 0;
+            foreach (SkinnedMeshRenderer skin in unitRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                if (skin == null || LpVisual.IsImportedArt(skin.transform)) continue;
+                Transform[] bones = skin.bones;
+                if (bones == null) continue;
+                foreach (Transform bone in bones)
+                {
+                    if (bone == null || !IsHullDetailBone(bone.name)) continue;
+                    if (bone.localScale == Vector3.zero) continue;
+                    bone.localScale = Vector3.zero;
+                    collapsed++;
+                }
+            }
+            return collapsed;
+        }
+
+        /// <summary>Bones that carry parts hanging off the donor hull rather than the hull itself.</summary>
+        internal static bool IsHullDetailBone(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            string n = name.ToLowerInvariant();
+            return n.StartsWith("skirt_") || n.StartsWith("fender_") || n.StartsWith("flap") ||
+                   n.StartsWith("gill_") || n.Contains("mudflap") || n.Contains("side_skirt");
+        }
+
         public static void Apply(Transform unitRoot)
         {
             CollectProtected(unitRoot);
@@ -83,6 +119,11 @@ namespace Leopard2A7V
             }
             MelonLogger.Msg($"[L2A7V] stripped the geometry of {stripped} donor renderer(s), " +
                             $"{netting} of them netting or markings");
+
+            int bones = CollapseSkinDetailBones(unitRoot);
+            if (bones > 0)
+                MelonLogger.Msg($"[L2A7V] collapsed {bones} skinned donor bone(s) (skirts, fenders, grilles) " +
+                                "so the old hull cannot poke through");
 
             int imprints = 0;
             foreach (Renderer renderer in unitRoot.GetComponentsInChildren<Renderer>(true))

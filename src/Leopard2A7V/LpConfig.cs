@@ -31,6 +31,8 @@ namespace Leopard2A7V
 
         public static MelonPreferences_Entry<int> ArmorLayers;
 
+        public static MelonPreferences_Entry<string> ThermalKey;
+
         public static float ArmorScale
         {
             get
@@ -242,9 +244,14 @@ namespace Leopard2A7V
         /// <summary>Which long-rod is carried, normalised to "dm53" or "dm73".</summary>
         internal static string AmmoChoice => NormalisedChoice(Ammo, "dm73", "dm53", "dm73");
 
+
         public static void Create()
         {
             Category = MelonPreferences.CreateCategory("Leopard2A7V", "Leopard 2A7V tank model swap");
+
+            // G collides with smoke and T is the game's own polarity key, so the channel key is a setting.
+            ThermalKey = Category.CreateEntry("ThermalKey", "T",
+                "Key that switches the commander sight between white light and thermal (KeyCode name)");
 
             Skin = Category.CreateEntry("Skin", "",
                 "Paint scheme: factory, nato, desert, winter, parade");

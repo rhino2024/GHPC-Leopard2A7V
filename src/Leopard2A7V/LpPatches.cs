@@ -1,6 +1,7 @@
 using System;
 using System.Reflection;
 using GHPC;
+using GHPC.Player;
 using GHPC.Mission;
 using HarmonyLib;
 using MelonLoader;
@@ -16,6 +17,20 @@ namespace Leopard2A7V
     {
         private static readonly FieldInfo UnitFriendlyName = AccessTools.Field(typeof(Unit), "_friendlyName");
         private static bool _installed;
+
+        /// <summary>
+        /// The game reads its own "toggle night sight polarity" binding (bare T) and flips the active slot. Our
+        /// commander sight wants Ctrl+T, so the call is filtered here: without the modifier the press is
+        /// dropped, and the toggle's own handler does the work.
+        /// </summary>
+        [HarmonyPatch(typeof(PlayerInput), "ToggleFLIRPolarity")]
+        internal static class PolarityNeedsCtrl
+        {
+            private static bool Prefix()
+            {
+                return Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
+            }
+        }
 
         public static void Install(HarmonyLib.Harmony harmony)
         {

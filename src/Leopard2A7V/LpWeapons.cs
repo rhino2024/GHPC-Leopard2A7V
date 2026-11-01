@@ -667,9 +667,6 @@ namespace Leopard2A7V
                     _gunMissingLogged = true;
                     MelonLogger.Msg("[L2A7V] no MainGun under " + root.name + "; the round list is written as soon " +
                                     "as the donor's art pass adds it");
-                    DescribeGuns(root);
-                    DumpAmmoOwners(root);
-                    DumpFeed(root);
                 }
                 return false;
             }

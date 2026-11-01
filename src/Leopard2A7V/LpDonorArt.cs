@@ -223,17 +223,59 @@ namespace Leopard2A7V
 
         private float _elapsed;
         private float _next;
+        private static Renderer[] _donorRenderers;
+
+        private static void RehideDonorArt()
+        {
+            if (_convertedUnit == null)
+            {
+                LpConvertBehaviour converted = Object.FindObjectOfType<LpConvertBehaviour>();
+                if (converted == null) return;
+                _convertedUnit = converted.gameObject;
+                LpBaseRig.CollapseSkinDetailBones(_convertedUnit.transform);
+                // The list is built once: walking the whole rig every frame to find the same renderers is the
+                // expensive part of this guard, and the set does not change after the conversion.
+                var list = new System.Collections.Generic.List<Renderer>();
+                foreach (Renderer renderer in _convertedUnit.GetComponentsInChildren<Renderer>(true))
+                {
+                    if (renderer == null) continue;
+                    if (LpVisual.IsImportedArt(renderer.transform)) continue;
+                    if (renderer is ParticleSystemRenderer) continue;
+                    if (!LpBaseRig.ShouldHide(renderer.transform, renderer.name)) continue;
+                    list.Add(renderer);
+                }
+                _donorRenderers = list.ToArray();
+                MelonLogger.Msg("[L2A7V] guarding " + _donorRenderers.Length + " donor renderer(s) against the " +
+                                "game switching them back on");
+            }
+
+            if (_donorRenderers == null) return;
+            foreach (Renderer renderer in _donorRenderers)
+            {
+                if (renderer == null) continue;
+                if (renderer.enabled) renderer.enabled = false;
+                if (renderer.transform.localScale != Vector3.zero) renderer.transform.localScale = Vector3.zero;
+            }
+        }
+
         private bool _gunDone;
+        private static GameObject _convertedUnit;
         private bool _armourDone;
         private bool _crewDone;
 
         private void Update()
         {
             _elapsed += Time.deltaTime;
+            RehideDonorArt();                       // every frame: the game re-enables these at will
             if (Time.unscaledTime < _next) return;
             _next = Time.unscaledTime + IntervalSeconds;
 
             if (!_gunDone) _gunDone = LpWeapons.ApplyGunList(gameObject);
+
+            // The donor's LEO2A3 art can come back on its own: the game re-enables renderers when the AAR root
+            // is torn down and when LODs switch, which is what makes the old hull show through ours. Re-hiding
+            // here is cheap - the scale is already zero, so only the flag needs checking.
+            RehideDonorArt();
             LpWeapons.ApplyThirdRound(gameObject);   // self-guarded and idempotent
             if (!_armourDone) _armourDone = LpArmor.Apply(gameObject);
             if (!_crewDone) _crewDone = LpDonorArt.HideDonorCrew(gameObject);
