@@ -234,6 +234,7 @@ namespace Leopard2A7V
             _next = Time.unscaledTime + IntervalSeconds;
 
             if (!_gunDone) _gunDone = LpWeapons.ApplyGunList(gameObject);
+            LpWeapons.ApplyThirdRound(gameObject);   // self-guarded and idempotent
             if (!_armourDone) _armourDone = LpArmor.Apply(gameObject);
             if (!_crewDone) _crewDone = LpDonorArt.HideDonorCrew(gameObject);
 

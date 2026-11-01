@@ -79,6 +79,10 @@ namespace Leopard2A7V
         private static AmmoClipCodexScriptable _dm11Clip;
         private static WeaponSystemCodexScriptable _gunCodex;
         private static bool _failed;
+        private static bool _gunMissingLogged;
+        private static bool _gunFoundLogged;
+        private static GameObject _pendingRefill;
+        private static int[] _pendingCounts;
 
         /// <summary>
         /// Switches on each spawned copy of the imported round visual. The template is kept inactive so it
@@ -216,7 +220,117 @@ namespace Leopard2A7V
         public static bool ApplyGunList(GameObject root)
         {
             if (root == null || _failed) return true;
-            return SyncMainGun(root, -1);
+            bool synced = SyncMainGun(root, -1);
+            if (synced) AppendDm11(root);
+            return synced;
+        }
+
+        /// <summary>
+        /// Carries DM11 as a third round, next to the HEAT round rather than instead of it.
+        ///
+        /// This only runs from the deferred pass: at spawn the vehicle has no MainGun yet, and extending the
+        /// loadout while the gun list stayed two long is exactly what emptied both rows the first time. Both
+        /// arrays are extended here or neither is.
+        /// </summary>
+        /// <summary>
+        /// Entry point for the deferred watcher: the third round only needs the loadout, because this donor has
+        /// no MainGun at all - its gun is a WeaponSystem with an AmmoFeed, and the racks fill from the loadout.
+        /// </summary>
+        public static void ApplyThirdRound(GameObject root)
+        {
+            // Disabled: a third round appended at runtime cannot reach the racks on this vehicle - the rack
+            // fill path needs VehicleInfo.Gun (a MainGun this donor does not have) - and leaving the loadout a
+            // type longer than the racks is what makes the vehicle destroy itself on spawn.
+            return;
+        }
+
+        private static void AppendDm11(GameObject root)
+        {
+            if (_clip == null) return;
+            return;   // disabled: this vehicle has no third slot
+
+            LoadoutManager loadout = root.GetComponent<LoadoutManager>();
+            if (loadout == null) return;
+            MainGun gun = FindGun(root);
+
+            AmmoClipCodexScriptable[] clips = loadout.LoadedAmmoList != null
+                ? loadout.LoadedAmmoList.AmmoClips
+                : loadout.LoadedAmmoTypes;
+            int[] counts = loadout.TotalAmmoCounts;
+            if (clips == null || counts == null) return;
+            foreach (AmmoClipCodexScriptable existing in clips)
+                if (ReferenceEquals(existing, _dm11Clip)) return;
+
+            int heat = FindHeatRow(clips);
+            if (heat < 0) return;
+
+            if (_dm11Clip == null &&
+                !Build(clips[heat], Dm11Name, Dm11PenetrationMm, Dm11MuzzleVelocity, Dm11MassKg, 2,
+                       AmmoType.AmmoCategory.Explosive, AmmoType.AmmoShortName.He))
+                return;
+
+            // The loadout is the list the racks fill from, so it is the one that has to grow. A gun list, when
+            // the vehicle has one, must agree with it or neither is written.
+            if (clips.Length != counts.Length) return;
+            bool hasGun = gun != null && gun.Ammo != null && gun.AmmoCounts != null;
+            if (hasGun && (gun.Ammo.Length != gun.AmmoCounts.Length || gun.Ammo.Length != clips.Length))
+            {
+                MelonLogger.Warning("[L2A7V] the loadout and the gun list are not the same length, so DM11 stays out");
+                return;
+            }
+
+            int take = Mathf.Min(12, Mathf.Max(0, counts[heat]));
+            if (take <= 0) return;
+
+            var newClips = new AmmoClipCodexScriptable[clips.Length + 1];
+            clips.CopyTo(newClips, 0);
+            newClips[clips.Length] = _dm11Clip;
+            var newCounts = new int[counts.Length + 1];
+            counts.CopyTo(newCounts, 0);
+            newCounts[clips.Length] = take;
+            newCounts[heat] = counts[heat] - take;
+
+            AmmoCodexScriptable[] newAmmo = null;
+            int[] newGunCounts = null;
+            if (hasGun)
+            {
+                newAmmo = new AmmoCodexScriptable[gun.Ammo.Length + 1];
+                gun.Ammo.CopyTo(newAmmo, 0);
+                newAmmo[newAmmo.Length - 1] = _dm11Codex;
+                newGunCounts = new int[gun.AmmoCounts.Length + 1];
+                gun.AmmoCounts.CopyTo(newGunCounts, 0);
+                newGunCounts[heat] -= take;
+                newGunCounts[newGunCounts.Length - 1] = take;
+            }
+
+            if (loadout.LoadedAmmoList != null) loadout.LoadedAmmoList.AmmoClips = newClips;
+            loadout.LoadedAmmoTypes = newClips;
+            loadout.TotalAmmoCounts = newCounts;
+
+            if (hasGun)
+            {
+                gun.Ammo = newAmmo;
+                var available = new AmmoType[newAmmo.Length];
+                for (int i = 0; i < newAmmo.Length; i++)
+                    available[i] = newAmmo[i] == null ? null : newAmmo[i].AmmoType;
+                gun.AvailableAmmo = available;
+                gun.AmmoCounts = newGunCounts;
+            }
+
+            if (RegisterBallistics != null) RegisterBallistics.Invoke(loadout, null);
+            LpDm11Fuse.Ensure();
+
+            // The racks were filled at spawn, when there were still two types, so the new one has no rounds
+            // anywhere. Refilling needs both the snapshot VehicleInfo copies into its racks and the fill call
+            // itself - that is what puts the DM11 rounds into the racks the gun loads from.
+            // VehicleInfo is added later than the loadout, so the first attempt usually finds nothing; the
+            // deferred watcher keeps calling back until it exists.
+            _pendingRefill = root;
+            _pendingCounts = (int[])newCounts.Clone();
+            TryRefillRacks();
+
+            MelonLogger.Msg($"[L2A7V] {Dm11Name} carried beside the HEAT round: {take} round(s) taken from it, " +
+                            $"{newClips.Length} type(s) in both lists");
         }
 
         /// <summary>
@@ -405,95 +519,6 @@ namespace Leopard2A7V
             return -1;
         }
 
-        /// <summary>
-        /// Carries DM11 as a third round, in the HE row the donor never had.
-        ///
-        /// The loadout, the gun list and the refill snapshot are all arrays parallel to the round types, so a
-        /// third type means one more slot at the end of each. The racks take their fill from the totals and
-        /// carry no per-type table of their own (both rack counts are empty in the donor), which is what makes
-        /// an appended type workable at all. Everything is done behind guards: if a length disagrees, the
-        /// vehicle keeps two rounds rather than ending up with none, which is what happened the first time
-        /// this was tried without them.
-        /// </summary>
-        private static void AppendDm11(GameObject root)
-        {
-            if (_clip == null) return;
-            LoadoutManager loadout = root.GetComponent<LoadoutManager>();
-            if (loadout == null) return;
-
-            AmmoClipCodexScriptable[] clips = loadout.LoadedAmmoList != null
-                ? loadout.LoadedAmmoList.AmmoClips
-                : loadout.LoadedAmmoTypes;
-            int[] counts = loadout.TotalAmmoCounts;
-            if (clips == null || counts == null || clips.Length != counts.Length)
-            {
-                MelonLogger.Warning("[L2A7V] loadout arrays do not line up, so DM11 is not carried");
-                return;
-            }
-            foreach (AmmoClipCodexScriptable existing in clips)
-                if (ReferenceEquals(existing, _dm11Clip)) return;
-
-            int heat = FindHeatRow(clips);
-            if (heat < 0)
-            {
-                MelonLogger.Warning("[L2A7V] no HEAT row to copy for DM11, so it is not carried");
-                return;
-            }
-
-            if (_dm11Clip == null && !Build(clips[heat], Dm11Name, Dm11PenetrationMm, Dm11MuzzleVelocity,
-                                            Dm11MassKg, 2, AmmoType.AmmoCategory.Explosive,
-                                            AmmoType.AmmoShortName.He))
-            {
-                MelonLogger.Warning("[L2A7V] DM11 could not be built, so the vehicle keeps two rounds");
-                return;
-            }
-
-            int take = Mathf.Min(12, Mathf.Max(0, counts[heat]));
-            if (take <= 0)
-            {
-                MelonLogger.Warning("[L2A7V] the HEAT row is empty, so DM11 has no rounds to take");
-                return;
-            }
-
-            var newClips = new AmmoClipCodexScriptable[clips.Length + 1];
-            clips.CopyTo(newClips, 0);
-            newClips[clips.Length] = _dm11Clip;
-            var newCounts = new int[counts.Length + 1];
-            counts.CopyTo(newCounts, 0);
-            newCounts[clips.Length] = take;
-            newCounts[heat] = counts[heat] - take;
-
-            if (loadout.LoadedAmmoList != null) loadout.LoadedAmmoList.AmmoClips = newClips;
-            loadout.LoadedAmmoTypes = newClips;
-            loadout.TotalAmmoCounts = newCounts;
-
-            MainGun gun = root.GetComponent<MainGun>();
-            bool gunOk = gun != null && gun.Ammo != null && gun.AmmoCounts != null &&
-                         gun.Ammo.Length == gun.AmmoCounts.Length && gun.Ammo.Length + 1 == newClips.Length;
-            if (gunOk)
-            {
-                var ammo = new AmmoCodexScriptable[newClips.Length];
-                gun.Ammo.CopyTo(ammo, 0);
-                ammo[newClips.Length - 1] = _dm11Codex;
-                gun.Ammo = ammo;
-
-                var available = new AmmoType[ammo.Length];
-                for (int i = 0; i < ammo.Length; i++) available[i] = ammo[i] == null ? null : ammo[i].AmmoType;
-                gun.AvailableAmmo = available;
-
-                var gunCounts = new int[ammo.Length];
-                gun.AmmoCounts.CopyTo(gunCounts, 0);
-                gunCounts[heat] -= take;
-                gunCounts[ammo.Length - 1] = take;
-                gun.AmmoCounts = gunCounts;
-            }
-
-            LpDm11Fuse.Ensure();
-            MelonLogger.Msg($"[L2A7V] {Dm11Name} added: {take} round(s) taken from the HEAT row, " +
-                            $"{newClips.Length} type(s) in the loadout" +
-                            (gunOk ? ", the gun list extended to match" : ", BUT the gun list could not be extended"));
-        }
-
         /// <summary>The DM11 round, so the fuse control can program it before firing.</summary>
         internal static AmmoType Dm11Shell => _dm11Shell;
 
@@ -502,6 +527,86 @@ namespace Leopard2A7V
         {
             if (_dm11Shell == null) return;
             _dm11Shell.RangedFuseTime = Mathf.Max(0f, seconds);
+        }
+
+        /// <summary>
+        /// Puts DM11 in the row the donor uses for its HEAT round, when the config asks for a high-explosive
+        /// round. Replacing rather than appending keeps the arrays the length the racks and the refill snapshot
+        /// were authored for - the third type is what emptied both rows the first time it was tried.
+        /// </summary>
+        private static void SubstituteSecondRound(GameObject root)
+        {
+            // Off: putting DM11 in the HEAT row left the vehicle destroying itself on spawn. The donor's
+            // second row stays its HEAT round until the round can be carried without breaking the racks.
+            if (root != null) return;
+            if (_clip == null) return;
+            return;
+
+            LoadoutManager loadout = root.GetComponent<LoadoutManager>();
+            if (loadout == null) return;
+            AmmoClipCodexScriptable[] clips = loadout.LoadedAmmoList != null
+                ? loadout.LoadedAmmoList.AmmoClips
+                : loadout.LoadedAmmoTypes;
+            if (clips == null) return;
+
+            int heat = FindHeatRow(clips);
+            if (heat < 0)
+            {
+                MelonLogger.Warning("[L2A7V] no HEAT row to carry DM11, so the second round stays as the donor's");
+                return;
+            }
+
+            if (_dm11Clip == null &&
+                !Build(clips[heat], Dm11Name, Dm11PenetrationMm, Dm11MuzzleVelocity, Dm11MassKg, 2,
+                       AmmoType.AmmoCategory.Explosive, AmmoType.AmmoShortName.He))
+            {
+                MelonLogger.Warning("[L2A7V] DM11 could not be built; the second round stays the donor's HEAT");
+                return;
+            }
+
+            if (ReferenceEquals(clips[heat], _dm11Clip)) return;
+            clips[heat] = _dm11Clip;
+            LpDm11Fuse.Ensure();
+
+            MainGun gun = root.GetComponent<MainGun>();
+            if (gun != null && gun.Ammo != null)
+            {
+                AmmoCodexScriptable[] ammo = gun.Ammo;
+                for (int i = 0; i < ammo.Length; i++)
+                {
+                    AmmoType type = ammo[i] == null ? null : ammo[i].AmmoType;
+                    if (type == null || type.ShortName != AmmoType.AmmoShortName.Heat) continue;
+                    ammo[i] = _dm11Codex;
+                    gun.Ammo = ammo;
+                    var available = new AmmoType[ammo.Length];
+                    for (int j = 0; j < ammo.Length; j++)
+                        available[j] = ammo[j] == null ? null : ammo[j].AmmoType;
+                    gun.AvailableAmmo = available;
+                    break;
+                }
+            }
+
+            MelonLogger.Msg($"[L2A7V] the donor's second row now carries {Dm11Name} " +
+                            $"({Dm11PenetrationMm:F0} mm, {Dm11MuzzleVelocity:F0} m/s)");
+        }
+
+        /// <summary>
+        /// Refills the racks once VehicleInfo exists, so a round added after the spawn fills with it.
+        /// </summary>
+        internal static void TryRefillRacks()
+        {
+            if (_pendingRefill == null || _pendingCounts == null) return;
+            if (VehicleInfoType == null || AmmoCountsOriginalField == null || FillAmmoRacks == null) return;
+            // VehicleInfo is not on the unit root in this build; hunt the subtree like everything else that
+            // the donor hangs off a child.
+            Component info = _pendingRefill.GetComponent(VehicleInfoType);
+            if (info == null) info = _pendingRefill.GetComponentInChildren(VehicleInfoType, true);
+            if (info == null) return;
+            AmmoCountsOriginalField.SetValue(info, (int[])_pendingCounts.Clone());
+            FillAmmoRacks.Invoke(info, null);
+            MelonLogger.Msg("[L2A7V] racks refilled so the third round has somewhere to come from");
+            _pendingRefill = null;
+            _pendingCounts = null;
         }
 
         /// <summary>
@@ -555,7 +660,19 @@ namespace Leopard2A7V
         {
             if (_codex == null || _shell == null || root == null) return false;
             MainGun gun = root.GetComponent<MainGun>();
-            if (gun == null) return false;
+            if (gun == null)
+            {
+                if (!_gunMissingLogged)
+                {
+                    _gunMissingLogged = true;
+                    MelonLogger.Msg("[L2A7V] no MainGun under " + root.name + "; the round list is written as soon " +
+                                    "as the donor's art pass adds it");
+                    DescribeGuns(root);
+                    DumpAmmoOwners(root);
+                    DumpFeed(root);
+                }
+                return false;
+            }
 
             AmmoCodexScriptable[] ammo = gun.Ammo ?? Array.Empty<AmmoCodexScriptable>();
             if (ammo.Length == 0)
@@ -596,6 +713,131 @@ namespace Leopard2A7V
         /// The gun's APFSDS row, by what the round is rather than by position: this donor fires DM23 first
         /// and DM12 second, but a rebuilt prefab or another nation's vehicle would not have to.
         /// </summary>
+        /// <summary>
+        /// The vehicle's main gun, wherever the rig keeps it. The donor hangs it under
+        /// "---MAIN GUN SCRIPTS---" rather than on the unit root, so a plain GetComponent never found it and
+        /// every round swap quietly did nothing.
+        /// </summary>
+        private static MainGun FindGun(GameObject root)
+        {
+            if (root == null) return null;
+            MainGun gun = root.GetComponent<MainGun>();
+            if (gun != null) return gun;
+            gun = root.GetComponentInChildren<MainGun>(true);
+            if (gun != null && !_gunFoundLogged)
+            {
+                _gunFoundLogged = true;
+                MelonLogger.Msg("[L2A7V] main gun found under " + PathOf(gun.transform) + ", not on the unit root");
+            }
+            return gun;
+        }
+
+        /// <summary>
+        /// One-off map of every MainGun in the scene, with the path each one hangs under. A gun that lives on a
+        /// sibling root rather than under the unit is invisible to GetComponentInChildren, and the only way to
+        /// tell is to print where they all are.
+        /// </summary>
+        /// <summary>
+        /// Lists the components on the unit that could own the round list: the gun class the code expects,
+        /// the feed, the rack, the loadout. The donor carries none of the MainGun type, so this says what it
+        /// does carry instead of guessing again.
+        /// </summary>
+        private static void DumpAmmoOwners(GameObject root)
+        {
+            if (root == null) return;
+            MelonLogger.Msg("[L2A7V] components on " + root.name + " that could hold rounds:");
+            int shown = 0;
+            foreach (MonoBehaviour behaviour in root.GetComponentsInChildren<MonoBehaviour>(true))
+            {
+                if (behaviour == null || shown >= 20) continue;
+                string type = behaviour.GetType().Name;
+                if (type.IndexOf("Gun", System.StringComparison.OrdinalIgnoreCase) < 0 &&
+                    type.IndexOf("Weapon", System.StringComparison.OrdinalIgnoreCase) < 0 &&
+                    type.IndexOf("Feed", System.StringComparison.OrdinalIgnoreCase) < 0 &&
+                    type.IndexOf("Ammo", System.StringComparison.OrdinalIgnoreCase) < 0 &&
+                    type.IndexOf("Loadout", System.StringComparison.OrdinalIgnoreCase) < 0) continue;
+                shown++;
+                MelonLogger.Msg("[L2A7V]   " + type + " on " + PathOf(behaviour.transform));
+            }
+        }
+
+        /// <summary>
+        /// Prints where the main gun keeps its rounds. The donor has no MainGun at all - the gun is a
+        /// WeaponSystem with an AmmoFeed - so this reflects over that feed and lists every member whose name
+        /// mentions ammo, with the length of whatever it holds.
+        /// </summary>
+        private static void DumpFeed(GameObject root)
+        {
+            if (root == null) return;
+            WeaponSystem main = null;
+            foreach (WeaponSystem weapon in root.GetComponentsInChildren<WeaponSystem>(true))
+            {
+                if (weapon == null) continue;
+                string path = PathOf(weapon.transform);
+                if (path.IndexOf("MAIN GUN", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    main = weapon;
+                    break;
+                }
+            }
+            if (main == null) return;
+
+            MelonLogger.Msg("[L2A7V] main gun WeaponSystem at " + PathOf(main.transform) +
+                            ", feed=" + (main.Feed == null ? "none" : "yes"));
+
+            if (main.Feed != null)
+            {
+                foreach (System.Reflection.FieldInfo field in typeof(AmmoFeed).GetFields(
+                             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public |
+                             System.Reflection.BindingFlags.NonPublic))
+                {
+                    if (field.Name.IndexOf("Ammo", System.StringComparison.OrdinalIgnoreCase) < 0 &&
+                        field.Name.IndexOf("Clip", System.StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    object value = field.GetValue(main.Feed);
+                    if (value is System.Array array)
+                        MelonLogger.Msg("[L2A7V]   feed." + field.Name + " [" + array.Length + "]");
+                    else
+                        MelonLogger.Msg("[L2A7V]   feed." + field.Name + " = " + (value == null ? "null" : value.ToString()));
+                }
+            }
+
+            LoadoutManager loadout = root.GetComponent<LoadoutManager>();
+            if (loadout != null)
+            {
+                AmmoClipCodexScriptable[] types = loadout.LoadedAmmoList != null
+                    ? loadout.LoadedAmmoList.AmmoClips
+                    : loadout.LoadedAmmoTypes;
+                if (types != null)
+                {
+                    MelonLogger.Msg("[L2A7V] loadout carries " + types.Length + " clip(s):");
+                    foreach (AmmoClipCodexScriptable clip in types)
+                        MelonLogger.Msg("[L2A7V]   " + (clip == null || clip.ClipType == null ? "null" : clip.ClipType.Name));
+                }
+            }
+        }
+
+        private static void DescribeGuns(GameObject root)
+        {
+            // The subtree only: a scene-wide FindObjectsOfTypeAll on the spawn frame is a needless stall, and
+            // every gun this vehicle can own hangs under its own root.
+            MainGun[] guns = root == null ? new MainGun[0] : root.GetComponentsInChildren<MainGun>(true);
+            MelonLogger.Msg("[L2A7V] MainGun components under " + (root == null ? "?" : root.name) + ": " + guns.Length);
+            foreach (MainGun found in guns)
+            {
+                if (found == null) continue;
+                MelonLogger.Msg("[L2A7V]   MainGun on " + PathOf(found.transform) +
+                                ", ammo=" + (found.Ammo == null ? 0 : found.Ammo.Length));
+            }
+        }
+
+        private static string PathOf(Transform node)
+        {
+            string path = node != null ? node.name : string.Empty;
+            for (Transform p = node != null ? node.parent : null; p != null; p = p.parent)
+                path = p.name + "/" + path;
+            return path;
+        }
+
         private static int FindSabotSlot(AmmoCodexScriptable[] ammo)
         {
             for (int i = 0; i < ammo.Length; i++)
@@ -626,7 +868,7 @@ namespace Leopard2A7V
                        dm73 ? Dm73PenetrationMm : PenetrationMm,
                        dm73 ? Dm73MuzzleVelocity : MuzzleVelocity,
                        dm73 ? Dm73MassKg : ProjectileMassKg,
-                       dm73 ? 1 : 0)) _failed = true;
+                       0)) _failed = true;
             return _clip;
         }
 

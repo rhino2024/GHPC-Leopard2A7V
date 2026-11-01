@@ -155,7 +155,8 @@ namespace Leopard2A7V
             LpArmor.Apply(root);
             if (!LpXrayArmor.Build(root)) LpArmorOwn.Build(root);
             LpModules.Apply(root);
-            LpRealAxis.Apply(root);
+            // The pivots only have the artwork under them after the visual pass, so moving an axis here
+            // would just offset a turret that is about to be parented. It runs from Convert instead.
             root.AddComponent<LpConvertBehaviour>();
             LpArmorDriver.Ensure();
         }

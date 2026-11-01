@@ -65,6 +65,11 @@ namespace Leopard2A7V
         private static bool Move(Transform space, DestructibleComponent zone, Target target)
         {
             Transform node = zone.transform;
+
+            // A hit zone is a bare trigger in this game, but never risk dragging artwork: if anything under it
+            // draws, leave the module where the donor put it.
+            if (node.GetComponentInChildren<Renderer>(true) != null) return false;
+
             Vector3 current = space.InverseTransformPoint(node.position);
             float drift = (current - target.Centre).magnitude;
             if (drift < 0.05f) return false;

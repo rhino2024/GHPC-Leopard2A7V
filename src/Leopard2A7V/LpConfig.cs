@@ -221,10 +221,26 @@ namespace Leopard2A7V
         {
             get
             {
-                string value = Ammo == null ? "dm53" : (Ammo.Value ?? string.Empty).Trim().ToLowerInvariant();
-                return value == "dm73" || value == "73" || value == "dm-73";
+                return AmmoChoice == "dm73";
             }
         }
+
+        /// <summary>
+        /// The entry as one of a fixed list, so a hand-edited config cannot put the mod into a state it has no
+        /// code for: anything unrecognised falls back to the default instead of silently doing nothing.
+        /// </summary>
+        internal static string NormalisedChoice(MelonPreferences_Entry<string> entry, string fallback,
+            params string[] allowed)
+        {
+            string value = entry == null ? null : (entry.Value ?? string.Empty).Trim().ToLowerInvariant();
+            if (string.IsNullOrEmpty(value)) return fallback;
+            foreach (string option in allowed)
+                if (value == option) return option;
+            return fallback;
+        }
+
+        /// <summary>Which long-rod is carried, normalised to "dm53" or "dm73".</summary>
+        internal static string AmmoChoice => NormalisedChoice(Ammo, "dm73", "dm53", "dm73");
 
         public static void Create()
         {
@@ -242,8 +258,8 @@ namespace Leopard2A7V
             ArmorLayers = Category.CreateEntry("ArmorLayers", 3,
                 "How many plates a composite array is split into (1 = one等效块, 3-4 = 逐层消耗, like the vanilla hulls)");
 
-            Ammo = Category.CreateEntry("Ammo", "dm53",
-                "APFSDS round: dm53 (1750 m/s) or dm73 (1780 m/s). The HEAT round is carried either way");
+            Ammo = Category.CreateEntry("Ammo", "dm73",
+                "APFSDS round: dm53 (1750 m/s) or dm73 (1780 m/s)");
 
             MelonPreferences.Save();
         }
