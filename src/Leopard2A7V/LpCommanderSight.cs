@@ -302,6 +302,7 @@ namespace Leopard2A7V
             LpReticleLight.Attach(mesh);
 
 
+
             Transform head = FindHead(unitRoot);
             if (head != null) Mount(clone.transform, head);
             else
@@ -462,10 +463,13 @@ namespace Leopard2A7V
                 Add(group.elements, -x, -h, -x, h, stroke * 0.6f, light);
             }
 
-            // The vertical marks above the cross: isolated dashes, no climbing line and no millimetre
-            // ladder under them. Every 2 mrad, longer at the tens. The first version put one only every
-            // 5 mrad, which left the top half of the picture almost bare.
-            for (float y = 2f; y <= 30f; y += 2f)
+            // The vertical marks above the cross: isolated dashes, no climbing line and no millimetre ladder
+            // under them. Every 2 mrad, longer at the tens, and carried all the way to the top of the screen -
+            // the field is quoted horizontally, so the height they have to reach is that field divided by the
+            // screen's aspect ratio.
+            float aspect = Screen.height > 0 ? (float)Screen.width / Screen.height : 1.7778f;
+            float toTop = Mathf.Tan(fov * 0.5f * Mathf.Deg2Rad) * 1000f / Mathf.Max(1f, aspect);
+            for (float y = 2f; y <= toTop; y += 2f)
             {
                 float w = Mathf.Abs(Mathf.Repeat(y, 10f)) < 0.01f ? 3.2f : 1.8f;
                 Add(group.elements, -w, y, w, y, stroke * 0.6f, light);
@@ -752,6 +756,33 @@ namespace Leopard2A7V
                 MelonLogger.Msg("[L2A7V] commander reticle scale x" + scale.ToString("0.00") +
                                 " at " + fov.ToString("0.##") + " deg (reference " + ReferenceFov.ToString("0.##") + ")");
             }
+        }
+    }
+
+
+    /// <summary>
+    /// Holds the sight picture at the size it is wanted at each stop: 400% of the screen width at the low
+    /// magnification and 600% at the high one. A plate is a fixed mesh, so without this the picture would
+    /// simply grow fourfold with the field ratio; this measures the field each frame and scales the mesh to
+    /// whatever proportion the ladder asks for.
+    /// </summary>
+    public class LpCommanderReticleFit : MonoBehaviour
+    {
+        internal CameraSlot Slot;
+        internal float LowFieldMrad;
+        internal float HighFieldMrad;
+        internal float AuthoredSpanMrad;
+        internal float LowProportion = 4f;
+        internal float HighProportion = 6f;
+
+        private void Update()
+        {
+            if (Slot == null) return;
+            float field = 2f * Mathf.Tan(Mathf.Max(1f, Slot.CurrentFov) * 0.5f * Mathf.Deg2Rad) * 1000f;
+            float t = Mathf.Clamp01((field - HighFieldMrad) / Mathf.Max(1f, LowFieldMrad - HighFieldMrad));
+            float proportion = Mathf.Lerp(HighProportion, LowProportion, t);
+            float scale = proportion * field / Mathf.Max(1f, AuthoredSpanMrad);
+            transform.localScale = Vector3.one * scale;
         }
     }
 }
