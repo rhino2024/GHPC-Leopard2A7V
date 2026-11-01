@@ -79,11 +79,13 @@ namespace Leopard2A7V
             return repaired;
         }
 
-        public static Material GetMaterial(int materialIndex, string groupKey)
+        public static Material GetMaterial(int materialIndex, string groupKey, bool pane)
         {
-            // Only the cupola pulls us_turret_glass, and there it is the commander's sight window. The same
-            // material also skins a few appliqué plates elsewhere, which must stay solid.
-            if (groupKey == LpVisual.CommanderGearNode && IsGlass(materialIndex))
+            // Every glazing sheet in the export - the cupola's sight window, the driver's periscopes, the
+            // headlight lenses - is named for what it is, but us_turret_glass also skins a few appliqué
+            // plates. Those are armour and have to stay painted, so the geometry decides: a pane is a couple
+            // of centimetres thick, a plate is not.
+            if (IsGlass(materialIndex) && (pane || groupKey == LpVisual.CommanderGearNode))
             {
                 Material glass = GetGlassMaterial();
                 if (glass != null) return glass;
@@ -118,7 +120,7 @@ namespace Leopard2A7V
             if (_glassMaterial == null)
             {
                 _glassMaterial = new Material(source) { name = "L2A7V glass" };
-                MelonLogger.Msg($"[L2A7V] using '{source.name}' for the commander's sight glass, " +
+                MelonLogger.Msg($"[L2A7V] using '{source.name}' for the glass panes, " +
                                 $"queue {_glassMaterial.renderQueue}");
             }
             else if (_glassMaterial.shader != source.shader)
@@ -309,6 +311,10 @@ namespace Leopard2A7V
             var tangents = new List<Vector4>();
             var submeshTriangles = new Dictionary<int, List<int>>();
             var materialOrder = new List<int>();
+            // Thinnest part seen for each material: a sight window or a headlight lens is a pane a couple of
+            // centimetres thick, while the appliqué plates that share the same glass sheet are armour and
+            // have to stay solid. Published so the material resolver can tell the two apart.
+            var submeshThickness = new Dictionary<int, float>();
 
             foreach (ObjGeometry part in ObjModel.Geometries)
             {
@@ -322,6 +328,13 @@ namespace Leopard2A7V
                     normals.Add(part.Normals[i]);
                     tangents.Add(part.Tangents[i]);
                 }
+
+                float thickness = Mathf.Min(part.Bounds.size.x, Mathf.Min(part.Bounds.size.y, part.Bounds.size.z));
+                float seen;
+                if (submeshThickness.TryGetValue(part.MaterialIndex, out seen))
+                    submeshThickness[part.MaterialIndex] = Mathf.Min(seen, thickness);
+                else
+                    submeshThickness[part.MaterialIndex] = thickness;
 
                 List<int> triangles;
                 if (!submeshTriangles.TryGetValue(part.MaterialIndex, out triangles))
@@ -348,6 +361,13 @@ namespace Leopard2A7V
             mesh.UploadMeshData(true);
 
             LpVisual.GroupMaterials[cacheKey] = materialOrder;
+            var thin = new List<bool>(materialOrder.Count);
+            foreach (int index in materialOrder)
+            {
+                float thickness = submeshThickness.ContainsKey(index) ? submeshThickness[index] : 0f;
+                thin.Add(thickness <= 0.06f);
+            }
+            LpVisual.GroupThin[cacheKey] = thin;
             Meshes[cacheKey] = mesh;
             return mesh;
         }

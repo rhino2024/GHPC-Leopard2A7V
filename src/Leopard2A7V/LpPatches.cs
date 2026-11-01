@@ -138,6 +138,7 @@ namespace Leopard2A7V
             LpWeapons.Apply(root);
             LpWeapons.ApplyGunArc(root);
             LpReticle.Apply(root.transform);
+            LpCommanderSight.Apply(root);
 
             if (root.GetComponent<LpConvertBehaviour>() != null) return;
 
@@ -148,7 +149,13 @@ namespace Leopard2A7V
 
             LpDonorArt.Request(root);
             LpArmorLog.Apply(root);
+            // The donor's armour components are alive here - 220 uniform and 33 measured pieces at spawn -
+            // and the game tears the AAR root down while this spawn's conversion still runs (two seconds
+            // later the same search returns nothing). This is the only point in the flow that has them.
+            LpArmor.Apply(root);
+            LpArmorOwn.Build(root);
             root.AddComponent<LpConvertBehaviour>();
+            LpArmorDriver.Ensure();
         }
     }
 

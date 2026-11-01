@@ -218,7 +218,7 @@ namespace Leopard2A7V
             TextureResolution = Category.CreateEntry("TextureResolution", "2k",
                 "Texture detail: 2k or 4k. 4k is sharper up close but needs far more video memory and load time");
 
-            ArmorCoefficient = Category.CreateEntry("ArmorCoefficient", 1f,
+            ArmorCoefficient = Category.CreateEntry("ArmorCoefficient", 1.2f,
                 "Armour strength multiplier over every zone (1 = real-data protection, 0.3-3)");
 
             MelonPreferences.Save();

@@ -44,7 +44,7 @@ namespace Leopard2A7V
     /// </summary>
     public static class LpArmor
     {
-        private sealed class Zone
+        internal sealed class Zone
         {
             public float Ke;
             public float Ce;
@@ -187,10 +187,21 @@ namespace Leopard2A7V
             harmony.Patch(target, postfix: new HarmonyMethod(typeof(LpArmor), postfix));
         }
 
+        private static readonly HashSet<string> _Attempted = new HashSet<string>(StringComparer.Ordinal);
+        private static readonly HashSet<string> _UnmatchedReported = new HashSet<string>(StringComparer.Ordinal);
+
         public static bool Apply(GameObject unitRoot)
         {
             if (!LpConfig.WtArmor || unitRoot == null) return true;
             if (_Reported.Contains(unitRoot.name)) return true;
+            if (_Attempted.Add(unitRoot.name))
+            {
+                MelonLogger.Msg("[L2A7V] armour pass attempt on " + unitRoot.name + ": " +
+                                unitRoot.GetComponentsInChildren<UniformArmor>(true).Length + " uniform + " +
+                                unitRoot.GetComponentsInChildren<VariableArmor>(true).Length +
+                                " raycast-measured pieces present, coefficient x" +
+                                LpConfig.ArmorScale.ToString("0.00"));
+            }
 
             var used = new HashSet<string>(StringComparer.Ordinal);
             var sb = new StringBuilder();
@@ -240,7 +251,8 @@ namespace Leopard2A7V
             {
                 if (used.Contains(key)) continue;
                 unmatched.Add(key);
-                MelonLogger.Warning("[L2A7V] armour zone '" + key + "' matched no piece on " + unitRoot.name);
+                if (_UnmatchedReported.Add(key))
+                    MelonLogger.Warning("[L2A7V] armour zone '" + key + "' matched no piece on " + unitRoot.name);
             }
 
             MelonLogger.Msg("[L2A7V] protection applied to " + (uniform + measured) +
@@ -316,6 +328,37 @@ namespace Leopard2A7V
             return zone != null;
         }
 
+        /// <summary>
+        /// The donor's runtime names against the zone names this table was written with.
+        ///
+        /// Only five of the forty-nine keys matched a piece on the LEO2A3 as spawned: the table was keyed from
+        /// the imported 2A7V's own part names, while the armour components on the donor are called
+        /// "turret cheek composite", "upper front plate", "hull upper left" and so on. Every one of those
+        /// arrays therefore kept the donor's fallback of 10 mm RHA - which is why a 600 mm dart went through
+        /// the turret face - so the names are bridged here instead of rewriting the table.
+        /// </summary>
+        private static readonly Dictionary<string, string> Aliases = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            { "turret cheek composite", "cheek array left A" },
+            { "turret left side composite", "cheek array right A" },
+            { "turret right side composite", "cheek array right B" },
+            { "heavy skirt", "skirt left" },
+            { "upper front plate", "upper glacis array" },
+            { "hull front plate", "lower front plate" },
+            { "hull upper left", "hull left upper" },
+            { "hull upper right", "hull right upper" },
+            { "hull lower left", "hull left lower" },
+            { "hull lower right", "hull right lower" },
+            { "hull front roof", "hull roof front" },
+        };
+
+        /// <summary>Looks a piece up by the same rules the value pass uses, for callers that build their own.</summary>
+        internal static bool TryResolve(string name, string label, HashSet<string> used, out Zone zone)
+        {
+            string via;
+            return TryMatch(name, label, out zone, used, out via);
+        }
+
         private static bool TryMatch(string name, string label, out Zone zone, HashSet<string> used,
             out string via)
         {
@@ -340,6 +383,18 @@ namespace Leopard2A7V
                 {
                     zone = Table[key];
                     via = "folded";
+                }
+            }
+
+            if (zone == null)
+            {
+                // The donor's own name, folded once, against the zone names this table uses.
+                string folded = NormalizeLookup(name) ?? NormalizeLookup(label);
+                string mapped;
+                if (folded != null && Aliases.TryGetValue(folded, out mapped) && Table.TryGetValue(mapped, out zone))
+                {
+                    key = mapped;
+                    via = "alias";
                 }
             }
 

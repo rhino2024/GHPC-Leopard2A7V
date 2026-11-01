@@ -32,7 +32,7 @@ namespace Leopard2A7V
     public static class LpReticle
     {
         private const string DonorPlateName = "EMES-15";
-        private const string PlateName = "LEO2A7V";
+        internal const string PlateName = "LEO2A7V";
         private const string RoofGunPlateName = "LEO2A7V_AA";
 
         /// <summary>
@@ -58,6 +58,9 @@ namespace Leopard2A7V
         private static TMP_FontAsset _font;
         private static bool _fontMissing;
         private static ReticleSO _plate;
+
+        /// <summary>The War Thunder sight picture the gunner reads, for channels that share it.</summary>
+        internal static ReticleSO DayPlate => _plate;
         private static ReticleSO _roofGunPlate;
 
         /// <summary>

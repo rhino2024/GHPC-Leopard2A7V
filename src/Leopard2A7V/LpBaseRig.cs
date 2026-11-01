@@ -73,6 +73,10 @@ namespace Leopard2A7V
                 if (!ShouldHide(renderer.transform, renderer.name)) continue;
                 StripGeometry(renderer);
                 renderer.enabled = false;
+                // The game's visibility pass can switch a renderer back on, so the transform is collapsed as
+                // well: a zero-scaled node draws nothing whatever happens to enabled.
+                if (renderer.transform.localScale != Vector3.zero)
+                    renderer.transform.localScale = Vector3.zero;
                 stripped++;
                 string path = PathOf(renderer.transform).ToLowerInvariant();
                 if (path.Contains("net") || path.Contains("camo") || path.Contains("marking")) netting++;

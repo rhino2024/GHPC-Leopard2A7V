@@ -4,6 +4,7 @@ using System.Reflection;
 using GHPC.Thermals;
 using HarmonyLib;
 using MelonLoader;
+using GHPC;
 using UnityEngine;
 
 namespace Leopard2A7V
@@ -37,6 +38,9 @@ namespace Leopard2A7V
         /// <summary>Submesh order per group cache key, published by LpAssets.BuildMesh.</summary>
         public static readonly Dictionary<string, List<int>> GroupMaterials = new Dictionary<string, List<int>>();
 
+        /// <summary>Which of those submeshes are panes rather than plates, same key and order.</summary>
+        public static readonly Dictionary<string, List<bool>> GroupThin = new Dictionary<string, List<bool>>();
+
         public const string CommanderGearNode = "CommanderGear";
 
         public const string GlassShaderName = "Standard (FLIR)";
@@ -57,6 +61,7 @@ namespace Leopard2A7V
             public Transform Turret;
             public Transform Gun;
             public Transform CommanderGear;
+            public Transform CommanderSight;
             public Transform RoofGunYaw;
             public Transform RoofGunPitch;
 
@@ -137,7 +142,10 @@ namespace Leopard2A7V
                 result.CommanderGear = MakePivot(turretBone, "L2A7V_CupolaPivot", Vector3.zero);
                 AttachParts(result.CommanderGear, CommanderGearNode,
                     part => part.Group == LpGroup.CommanderGear &&
+                          !LpCommanderSight.IsSightPart(part.ObjectName) &&
                           !(LpConfig.AddRoofGun && LpRoofGun.IsRoofGunPart(part.ObjectName)), ring);
+                // The sight head is split out of that merged mesh so it can turn with the commander's view.
+                result.CommanderSight = LpCommanderSight.AttachHead(turretBone, ring);
 
                 result.Gun = MakePivot(mantletBone, "L2A7V_GunPivot", Vector3.zero);
                 AttachGroup(result.Gun, "Gun", LpGroup.Gun, trunnion);
@@ -157,6 +165,15 @@ namespace Leopard2A7V
             LpBaseRig.Apply(unit);
             LpDonorArt.Request(unitRoot);
             LpArmorLog.Apply(unitRoot);
+            // The donor's armour components exist right now and are gone within the second: the game
+            // tears the AAR root down after the spawn, so the retrying watch finds nothing to write to.
+            // Applying the table here, while the 220 uniform and 33 measured pieces are still in the tree,
+            // is the only window that has them.
+            MelonLogger.Msg("[L2A7V] armour at conversion: " +
+                            unitRoot.GetComponentsInChildren<UniformArmor>(true).Length + " uniform + " +
+                            unitRoot.GetComponentsInChildren<VariableArmor>(true).Length +
+                            " measured on '" + unitRoot.name + "'");
+            LpArmor.Apply(unitRoot);
             ApplyHeat(result);
             LpDiagnostics.DumpOnce(unitRoot);
             return result;
@@ -229,10 +246,12 @@ namespace Leopard2A7V
             List<int> order;
             if (GroupMaterials.TryGetValue(name, out order))
             {
+                List<bool> thin;
+                if (!GroupThin.TryGetValue(name, out thin)) thin = new List<bool>();
                 var materials = new Material[order.Count];
                 for (int i = 0; i < order.Count; i++)
                 {
-                    materials[i] = LpAssets.GetMaterial(order[i], name);
+                    materials[i] = LpAssets.GetMaterial(order[i], name, i < thin.Count && thin[i]);
                     if (materials[i] == null)
                         MelonLogger.Warning("[L2A7V] material unavailable for index " + order[i]);
                 }

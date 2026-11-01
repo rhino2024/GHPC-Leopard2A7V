@@ -56,6 +56,8 @@ namespace Leopard2A7V
             if (unitRoot == null) return;
             if (unitRoot.GetComponent<LpDonorArtWatch>() != null) return;
             unitRoot.AddComponent<LpDonorArtWatch>();
+            MelonLogger.Msg("[L2A7V] watching the donor art pass on " + unitRoot.name +
+                            " for the gun list, the armour table and the crew figures");
         }
 
         /// <summary>
@@ -246,6 +248,43 @@ namespace Leopard2A7V
                                 " s (gun list " + _gunDone + ", armour " + _armourDone +
                                 ", crew figures " + _crewDone + ")");
             Destroy(this);
+        }
+    }
+
+
+    /// <summary>
+    /// Keeps calling the armour pass on every converted unit until it reports success.
+    ///
+    /// The per-unit watcher never fired in practice: the log shows the donor report (220 uniform + 33
+    /// raycast pieces) but no "protection applied" line at all, so the table simply never landed and every
+    /// composite array kept the donor's 10 mm fallback. This driver is attached to a host of its own, so it
+    /// ticks no matter what happens to the unit's own hierarchy, and it retries once a second until each
+    /// converted unit is done.
+    /// </summary>
+    public class LpArmorDriver : MonoBehaviour
+    {
+        private static LpArmorDriver _instance;
+
+        private float _next;
+
+        internal static void Ensure()
+        {
+            if (_instance != null) return;
+            var host = new GameObject("L2A7V_ArmourDriver");
+            UnityEngine.Object.DontDestroyOnLoad(host);
+            _instance = host.AddComponent<LpArmorDriver>();
+        }
+
+        private void Update()
+        {
+            if (Time.unscaledTime < _next) return;
+            _next = Time.unscaledTime + 1f;
+
+            foreach (LpConvertBehaviour marker in UnityEngine.Object.FindObjectsOfType<LpConvertBehaviour>())
+            {
+                if (marker == null) continue;
+                LpArmor.Apply(marker.gameObject);
+            }
         }
     }
 }

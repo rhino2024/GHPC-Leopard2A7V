@@ -308,6 +308,10 @@ namespace Leopard2A7V
             foreach (ObjGeometry geometry in ObjModel.Geometries)
             {
                 if (geometry.Group != LpGroup.RunningGear) continue;
+                // The donor's own skinned loops are what this vehicle rolls on, and they carry the Leopard 2A3
+                // track sheet. Drawing the export's loops as well would put a stiff copy of the track on a
+                // wheel, textured with the model's own sheet, on top of the animated one.
+                if (LpConfig.UseDonorTrackArt && IsTrackLoop(geometry.ObjectName)) continue;
                 Part part;
                 if (!parts.TryGetValue(geometry.ObjectName, out part))
                 {
