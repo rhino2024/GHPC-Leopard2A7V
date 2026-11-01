@@ -153,7 +153,9 @@ namespace Leopard2A7V
             // and the game tears the AAR root down while this spawn's conversion still runs (two seconds
             // later the same search returns nothing). This is the only point in the flow that has them.
             LpArmor.Apply(root);
-            LpArmorOwn.Build(root);
+            if (!LpXrayArmor.Build(root)) LpArmorOwn.Build(root);
+            LpModules.Apply(root);
+            LpRealAxis.Apply(root);
             root.AddComponent<LpConvertBehaviour>();
             LpArmorDriver.Ensure();
         }

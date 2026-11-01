@@ -27,6 +27,10 @@ namespace Leopard2A7V
         /// </summary>
         public static MelonPreferences_Entry<float> ArmorCoefficient;
 
+        public static MelonPreferences_Entry<string> Ammo;
+
+        public static MelonPreferences_Entry<int> ArmorLayers;
+
         public static float ArmorScale
         {
             get
@@ -208,6 +212,20 @@ namespace Leopard2A7V
         /// <summary>True when the 4K kit under textures_uhq/ is the one to bind.</summary>
         public static bool UhdTextures => ResolutionName == "4k";
 
+        /// <summary>
+        /// Which long-rod the gun carries. Both are 800 mm rounds; DM73 leaves the barrel 30 m/s faster, so it
+        /// holds its penetration a little further out. Only one is carried at a time - the vehicle has one
+        /// APFSDS row and one HEAT row, and the HEAT round stays.
+        /// </summary>
+        public static bool CarriesDm73
+        {
+            get
+            {
+                string value = Ammo == null ? "dm53" : (Ammo.Value ?? string.Empty).Trim().ToLowerInvariant();
+                return value == "dm73" || value == "73" || value == "dm-73";
+            }
+        }
+
         public static void Create()
         {
             Category = MelonPreferences.CreateCategory("Leopard2A7V", "Leopard 2A7V tank model swap");
@@ -220,6 +238,12 @@ namespace Leopard2A7V
 
             ArmorCoefficient = Category.CreateEntry("ArmorCoefficient", 1.2f,
                 "Armour strength multiplier over every zone (1 = real-data protection, 0.3-3)");
+
+            ArmorLayers = Category.CreateEntry("ArmorLayers", 3,
+                "How many plates a composite array is split into (1 = one等效块, 3-4 = 逐层消耗, like the vanilla hulls)");
+
+            Ammo = Category.CreateEntry("Ammo", "dm53",
+                "APFSDS round: dm53 (1750 m/s) or dm73 (1780 m/s). The HEAT round is carried either way");
 
             MelonPreferences.Save();
         }

@@ -162,6 +162,8 @@ namespace Leopard2A7V
         /// </summary>
         private static readonly HashSet<Transform> ProtectedTransforms = new HashSet<Transform>();
 
+    private static readonly HashSet<string> _RigWarned = new HashSet<string>(System.StringComparer.Ordinal);
+
         private static void CollectProtected(Transform unitRoot)
         {
             ProtectedTransforms.Clear();
@@ -210,6 +212,7 @@ namespace Leopard2A7V
 
             if (donorCount > MaxProtectedRenderers)
             {
+                if (!_RigWarned.Add(PathOf(node))) return;
                 MelonLogger.Warning($"[L2A7V] a sight reference names {PathOf(node)}, which covers " +
                                     $"{donorCount} donor renderer(s) - that is a rig bone, not sight art, " +
                                     "so its subtree still gets stripped");

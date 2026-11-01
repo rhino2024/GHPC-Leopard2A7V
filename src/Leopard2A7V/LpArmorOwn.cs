@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using GHPC;
 using MelonLoader;
 using UnityEngine;
@@ -85,6 +86,7 @@ namespace Leopard2A7V
             internal Collider Collider;
             internal Bounds Bounds;
             internal LpArmor.Zone Zone;
+            internal string Name;
             internal bool IsTurret;
             internal bool IsGun;
         }
@@ -129,6 +131,7 @@ namespace Leopard2A7V
                 Collider = collider,
                 Bounds = bounds,
                 Zone = zone,
+                Name = source.name,
                 IsTurret = path.Contains("turret") || path.Contains("cupola") || path.Contains("peri"),
                 IsGun = path.Contains("gun") || path.Contains("mantlet") || path.Contains("barrel"),
             });
@@ -169,36 +172,128 @@ namespace Leopard2A7V
             return false;
         }
 
+        /// <summary>
+        /// Builds one permanent armour piece from a donor one.
+        ///
+        /// The shape is the donor's own collider where it has one, not its bounding box: an axis-aligned box
+        /// around an inclined glacis stands proud of the real plate, so a round was being stopped in the air a
+        /// little in front of the armour it was aimed at. Cloning the collider keeps the plate's own face and
+        /// its normal, which is also what makes the obliquity come out right.
+        /// </summary>
         private static bool BuildPiece(Transform bone, ArmorPiece piece)
         {
+            Collider source = piece.Collider != null ? piece.Collider : piece.Source.GetComponent<Collider>();
             Vector3 centre = bone.InverseTransformPoint(piece.Bounds.center);
             Vector3 size = bone.InverseTransformVector(piece.Bounds.size);
             size = new Vector3(Mathf.Abs(size.x), Mathf.Abs(size.y), Mathf.Abs(size.z));
-            if (size.x < 0.01f || size.y < 0.01f || size.z < 0.01f) return false;
+            if (size.x < 0.01f && size.y < 0.01f && size.z < 0.01f) return false;
 
-            var go = new GameObject(Marker + " " + piece.Source.transform.name);
+            var go = new GameObject(Marker + " " + piece.Source.name);
             go.transform.SetParent(bone, false);
-            go.transform.localPosition = centre;
-            go.transform.localRotation = Quaternion.identity;
-            go.transform.localScale = Vector3.one;
-            go.layer = 8;
-            go.tag = "Penetrable";
+            go.layer = piece.Source.gameObject.layer;
+            go.tag = piece.Source.gameObject.tag;
 
-            var box = go.AddComponent<BoxCollider>();
-            box.size = size;
+            if (source is MeshCollider meshSource && meshSource.sharedMesh != null)
+            {
+                go.transform.position = source.transform.position;
+                go.transform.rotation = source.transform.rotation;
+                MeshCollider mesh = go.AddComponent<MeshCollider>();
+                mesh.sharedMesh = meshSource.sharedMesh;
+                mesh.convex = false;
+            }
+            else if (source is BoxCollider boxSource)
+            {
+                go.transform.position = boxSource.transform.TransformPoint(boxSource.center);
+                go.transform.rotation = boxSource.transform.rotation;
+                go.transform.localScale = boxSource.transform.lossyScale;
+                BoxCollider box = go.AddComponent<BoxCollider>();
+                box.size = boxSource.size;
+            }
+            else if (source is SphereCollider sphereSource)
+            {
+                go.transform.position = sphereSource.transform.position;
+                SphereCollider sphere = go.AddComponent<SphereCollider>();
+                sphere.radius = sphereSource.radius;
+            }
+            else if (source is CapsuleCollider capsuleSource)
+            {
+                go.transform.position = capsuleSource.transform.position;
+                go.transform.rotation = capsuleSource.transform.rotation;
+                CapsuleCollider capsule = go.AddComponent<CapsuleCollider>();
+                capsule.radius = capsuleSource.radius;
+                capsule.height = capsuleSource.height;
+                capsule.direction = capsuleSource.direction;
+            }
+            else
+            {
+                // No collider to copy: fall back to the bounding box, which is all the piece has ever given us.
+                go.transform.localPosition = centre;
+                go.transform.localRotation = Quaternion.identity;
+                go.transform.localScale = Vector3.one;
+                BoxCollider fallback = go.AddComponent<BoxCollider>();
+                fallback.size = size;
+            }
 
             float scale = LpConfig.ArmorScale;
             var armor = go.AddComponent<UniformArmor>();
+
+            // Everything else comes over from the donor piece: its armour codex (which decides spall, ricochet
+            // and long-rod shatter), surface material, spall angles and codename. Only the thickness is ours.
+            foreach (FieldInfo field in typeof(UniformArmor).GetFields(
+                         BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+            {
+                if (field.IsLiteral || field.IsInitOnly) continue;
+                string fieldName = field.Name;
+                if (fieldName == "DetonatedObjects" || fieldName == "UndetonatedObjects" ||
+                    fieldName == "CenterPoint" || fieldName == "PrimarySabotRha" ||
+                    fieldName == "PrimaryHeatRha" || fieldName == "SecondarySabotRha" ||
+                    fieldName == "SecondaryHeatRha" || fieldName == "ThicknessListed") continue;
+                try { field.SetValue(armor, field.GetValue(piece.Source as UniformArmor)); }
+                catch (Exception) { }
+            }
+
             armor.PrimarySabotRha = piece.Zone.Ke * scale;
             armor.PrimaryHeatRha = piece.Zone.Ce * scale;
             armor.ThicknessListed = UniformArmor.ThicknessMode.RHAE;
             armor.AngleMatters = true;
             armor.DetonatedObjects = Array.Empty<GameObject>();
             armor.UndetonatedObjects = Array.Empty<GameObject>();
+            armor.CenterPoint = go.transform;
+            armor.SetName(piece.Name);
 
             var unit = go.GetComponentInParent<Unit>();
             if (unit != null) armor.Unit = unit;
+
+            // The x-ray view only draws armour that carries an AarVisual, which is what makes a penetrated
+            // plate readable in the after-action report. The material is taken from any vanilla visual in the
+            // scene rather than authored here: it is the game's own teal see-through, and hard-coding one would
+            // go stale the moment the shader changes.
+            AarVisual aar = go.AddComponent<AarVisual>();
+            aar.HideUntilAar = true;
+            Material xray = XrayMaterial();
+            if (xray != null)
+            {
+                aar.SwitchMaterials = true;
+                aar.AarMaterial = xray;
+                aar.UpdateVisibility();
+            }
             return true;
+        }
+
+        private static Material _xray;
+
+        /// <summary>The game's own see-through armour material, borrowed from a live AarVisual.</summary>
+        internal static Material XrayMaterial()
+        {
+            if (_xray != null) return _xray;
+            foreach (AarVisual visual in Resources.FindObjectsOfTypeAll<AarVisual>())
+            {
+                if (visual == null || visual.AarMaterial == null) continue;
+                if (!visual.AarMaterial.name.ToLowerInvariant().Contains("see-through")) continue;
+                _xray = visual.AarMaterial;
+                break;
+            }
+            return _xray;
         }
 
         private static void Disable(ArmorPiece piece)

@@ -45,6 +45,15 @@ namespace Leopard2A7V
         private const float Dm73MuzzleVelocity = 1780f;
         private const float Dm73MassKg = 5f;
 
+        /// <summary>
+        /// DM11: the programmable HE round for the L/55. About 870 m/s and a 3 kg-class HE filling; against
+        /// armour it is nearly useless, and its job is soft targets, structures and airburst.
+        /// </summary>
+        private const string Dm11Name = "DM11 HE-FRAG";
+        private const float Dm11PenetrationMm = 20f;
+        private const float Dm11MuzzleVelocity = 870f;
+        private const float Dm11MassKg = 4f;
+
         private static readonly FieldInfo WeaponCodexField =
             AccessTools.Field(typeof(WeaponSystem), "CodexEntry");
         private static readonly MethodInfo RegisterBallistics =
@@ -65,6 +74,9 @@ namespace Leopard2A7V
         private static AmmoType _dm73Shell;
         private static AmmoCodexScriptable _dm73Codex;
         private static AmmoClipCodexScriptable _dm73Clip;
+        private static AmmoType _dm11Shell;
+        private static AmmoCodexScriptable _dm11Codex;
+        private static AmmoClipCodexScriptable _dm11Clip;
         private static WeaponSystemCodexScriptable _gunCodex;
         private static bool _failed;
 
@@ -170,11 +182,12 @@ namespace Leopard2A7V
             entry.Name = WeaponEntryName;
             RenameWeapon(entry.Weapon);
             bool gunSynced = SyncMainGun(root, firstCount);
-            // DM73 is built but not carried yet: appending a third ammo type breaks the live loadout
-            // (DM73 and the HEAT row both end up with no rounds and no restock), because the racks and
-            // the vehicle's refill snapshot are authored for exactly two types. Re-enable this only
-            // together with a full rack rebalance.
-            // AppendDm73(root);
+            // DM11 is built but not carried yet. At spawn the vehicle has no MainGun component - it arrives
+            // with the donor's art pass a second later - so the round list can only grow on the loadout, and
+            // a loadout with three types against a gun with two is what made the tank explode on spawn.
+            // AppendDm11(root);
+            // One long-rod at a time, chosen in the config: the DM53 row carries either round and the HEAT
+            // row is left alone. Two clips is what the racks and the refill snapshot are authored for.
 
             // The list was registered against the donor's clips in Awake, and Start reads the ballistics
             // out of this repository, so the new round has to be in it before either of them runs.
@@ -183,9 +196,11 @@ namespace Leopard2A7V
             if (gunSynced)
             {
                 int dm23 = CountDonorSabot(clips, loadout.TotalAmmoCounts);
+                bool isDm73 = LpConfig.CarriesDm73;
                 MelonLogger.Msg($"[L2A7V] main gun set to {WeaponEntryName}: the donor's APFSDS row " +
-                                $"(was DM23) now carries {ShellName} ({PenetrationMm:F0} mm, " +
-                                $"{MuzzleVelocity:F0} m/s) at key {sabot + 1}; " +
+                                $"(was DM23) now carries {(isDm73 ? Dm73Name : ShellName)} " +
+                                $"({(isDm73 ? Dm73PenetrationMm : PenetrationMm):F0} mm, " +
+                                $"{(isDm73 ? Dm73MuzzleVelocity : MuzzleVelocity):F0} m/s) at key {sabot + 1}; " +
                                 $"{clips.Length} round type(s) in the loadout, {dm23} DM23 round(s) left" +
                                 (dm23 == 0 ? string.Empty : " - see the rows above"));
             }
@@ -233,7 +248,7 @@ namespace Leopard2A7V
             }
             if (donorClip == null) return;
 
-            if (!Build(donorClip, Dm73Name, Dm73PenetrationMm, Dm73MuzzleVelocity, Dm73MassKg, true))
+            if (!Build(donorClip, Dm73Name, Dm73PenetrationMm, Dm73MuzzleVelocity, Dm73MassKg, 1))
             {
                 MelonLogger.Warning("[L2A7V] DM73 could not be built, so the vehicle carries the DM53 row only");
                 return;
@@ -298,6 +313,195 @@ namespace Leopard2A7V
 
             MelonLogger.Msg($"[L2A7V] {Dm73Name} added beside {ShellName}: {take} round(s) taken from the " +
                             $"DM53 row, {carried} placed in {racks} rack(s), each extended to {newClips.Length} type(s)");
+        }
+
+        /// <summary>
+        /// Puts DM73 in the row the donor uses for its HEAT round, so both long-rods are selectable.
+        ///
+        /// The loadout, the racks and the vehicle's refill snapshot are all authored for exactly two clips.
+        /// Adding a third was tried and it left DM73 and HEAT both empty, so the second row is replaced
+        /// instead: the DM53 row keeps its rounds, this one carries DM73, and nothing about the arrays or
+        /// their indices changes.
+        /// </summary>
+        private static void SubstituteDm73ForHeat(GameObject root)
+        {
+            if (_clip == null) return;
+
+            LoadoutManager loadout = root.GetComponent<LoadoutManager>();
+            if (loadout == null) return;
+
+            AmmoClipCodexScriptable[] clips = loadout.LoadedAmmoList != null
+                ? loadout.LoadedAmmoList.AmmoClips
+                : loadout.LoadedAmmoTypes;
+            if (clips == null) return;
+
+            if (_dm73Clip == null)
+            {
+                AmmoClipCodexScriptable donor = null;
+                foreach (AmmoClipCodexScriptable candidate in clips)
+                {
+                    if (candidate == null || candidate.ClipType == null) continue;
+                    AmmoCodexScriptable[] pattern = candidate.ClipType.MinimalPattern;
+                    if (pattern == null || pattern.Length == 0 || pattern[0] == null) continue;
+                    donor = candidate;
+                    break;
+                }
+                if (donor == null) return;
+                if (!Build(donor, Dm73Name, Dm73PenetrationMm, Dm73MuzzleVelocity, Dm73MassKg, 1))
+                {
+                    MelonLogger.Warning("[L2A7V] DM73 could not be built; the vehicle keeps the donor's second round");
+                    return;
+                }
+            }
+
+            int heat = FindHeatRow(clips);
+            if (heat < 0)
+            {
+                MelonLogger.Warning("[L2A7V] the donor loadout holds no HEAT row to carry DM73, so only DM53 is carried");
+                return;
+            }
+            if (ReferenceEquals(clips[heat], _dm73Clip)) return;
+
+            int[] counts = loadout.TotalAmmoCounts;
+            int held = counts != null && counts.Length > heat ? counts[heat] : 0;
+            clips[heat] = _dm73Clip;
+            if (counts != null && counts.Length > heat) counts[heat] = held;
+
+            MainGun gun = root.GetComponent<MainGun>();
+            if (gun != null && gun.Ammo != null)
+            {
+                AmmoCodexScriptable[] ammo = gun.Ammo;
+                for (int i = 0; i < ammo.Length; i++)
+                {
+                    AmmoType type = ammo[i] == null ? null : ammo[i].AmmoType;
+                    if (type == null || type.ShortName != AmmoType.AmmoShortName.Heat) continue;
+                    ammo[i] = _dm73Codex;
+                    gun.Ammo = ammo;
+                    var available = new AmmoType[ammo.Length];
+                    for (int j = 0; j < ammo.Length; j++)
+                        available[j] = ammo[j] == null ? null : ammo[j].AmmoType;
+                    gun.AvailableAmmo = available;
+                    break;
+                }
+            }
+
+            MelonLogger.Msg($"[L2A7V] the donor's HEAT row now carries {Dm73Name} ({Dm73PenetrationMm:F0} mm, " +
+                            $"{Dm73MuzzleVelocity:F0} m/s) beside {ShellName}: {held} round(s), row {heat + 1} of " +
+                            $"{clips.Length}");
+        }
+
+        /// <summary>The donor's HEAT row, by what the round is rather than by position.</summary>
+        private static int FindHeatRow(AmmoClipCodexScriptable[] clips)
+        {
+            for (int i = 0; i < clips.Length; i++)
+            {
+                AmmoClipCodexScriptable clip = clips[i];
+                if (clip == null || clip.ClipType == null) continue;
+                AmmoCodexScriptable[] pattern = clip.ClipType.MinimalPattern;
+                if (pattern == null || pattern.Length == 0 || pattern[0] == null) continue;
+                AmmoType type = pattern[0].AmmoType;
+                if (type != null && type.ShortName == AmmoType.AmmoShortName.Heat) return i;
+            }
+            return -1;
+        }
+
+        /// <summary>
+        /// Carries DM11 as a third round, in the HE row the donor never had.
+        ///
+        /// The loadout, the gun list and the refill snapshot are all arrays parallel to the round types, so a
+        /// third type means one more slot at the end of each. The racks take their fill from the totals and
+        /// carry no per-type table of their own (both rack counts are empty in the donor), which is what makes
+        /// an appended type workable at all. Everything is done behind guards: if a length disagrees, the
+        /// vehicle keeps two rounds rather than ending up with none, which is what happened the first time
+        /// this was tried without them.
+        /// </summary>
+        private static void AppendDm11(GameObject root)
+        {
+            if (_clip == null) return;
+            LoadoutManager loadout = root.GetComponent<LoadoutManager>();
+            if (loadout == null) return;
+
+            AmmoClipCodexScriptable[] clips = loadout.LoadedAmmoList != null
+                ? loadout.LoadedAmmoList.AmmoClips
+                : loadout.LoadedAmmoTypes;
+            int[] counts = loadout.TotalAmmoCounts;
+            if (clips == null || counts == null || clips.Length != counts.Length)
+            {
+                MelonLogger.Warning("[L2A7V] loadout arrays do not line up, so DM11 is not carried");
+                return;
+            }
+            foreach (AmmoClipCodexScriptable existing in clips)
+                if (ReferenceEquals(existing, _dm11Clip)) return;
+
+            int heat = FindHeatRow(clips);
+            if (heat < 0)
+            {
+                MelonLogger.Warning("[L2A7V] no HEAT row to copy for DM11, so it is not carried");
+                return;
+            }
+
+            if (_dm11Clip == null && !Build(clips[heat], Dm11Name, Dm11PenetrationMm, Dm11MuzzleVelocity,
+                                            Dm11MassKg, 2, AmmoType.AmmoCategory.Explosive,
+                                            AmmoType.AmmoShortName.He))
+            {
+                MelonLogger.Warning("[L2A7V] DM11 could not be built, so the vehicle keeps two rounds");
+                return;
+            }
+
+            int take = Mathf.Min(12, Mathf.Max(0, counts[heat]));
+            if (take <= 0)
+            {
+                MelonLogger.Warning("[L2A7V] the HEAT row is empty, so DM11 has no rounds to take");
+                return;
+            }
+
+            var newClips = new AmmoClipCodexScriptable[clips.Length + 1];
+            clips.CopyTo(newClips, 0);
+            newClips[clips.Length] = _dm11Clip;
+            var newCounts = new int[counts.Length + 1];
+            counts.CopyTo(newCounts, 0);
+            newCounts[clips.Length] = take;
+            newCounts[heat] = counts[heat] - take;
+
+            if (loadout.LoadedAmmoList != null) loadout.LoadedAmmoList.AmmoClips = newClips;
+            loadout.LoadedAmmoTypes = newClips;
+            loadout.TotalAmmoCounts = newCounts;
+
+            MainGun gun = root.GetComponent<MainGun>();
+            bool gunOk = gun != null && gun.Ammo != null && gun.AmmoCounts != null &&
+                         gun.Ammo.Length == gun.AmmoCounts.Length && gun.Ammo.Length + 1 == newClips.Length;
+            if (gunOk)
+            {
+                var ammo = new AmmoCodexScriptable[newClips.Length];
+                gun.Ammo.CopyTo(ammo, 0);
+                ammo[newClips.Length - 1] = _dm11Codex;
+                gun.Ammo = ammo;
+
+                var available = new AmmoType[ammo.Length];
+                for (int i = 0; i < ammo.Length; i++) available[i] = ammo[i] == null ? null : ammo[i].AmmoType;
+                gun.AvailableAmmo = available;
+
+                var gunCounts = new int[ammo.Length];
+                gun.AmmoCounts.CopyTo(gunCounts, 0);
+                gunCounts[heat] -= take;
+                gunCounts[ammo.Length - 1] = take;
+                gun.AmmoCounts = gunCounts;
+            }
+
+            LpDm11Fuse.Ensure();
+            MelonLogger.Msg($"[L2A7V] {Dm11Name} added: {take} round(s) taken from the HEAT row, " +
+                            $"{newClips.Length} type(s) in the loadout" +
+                            (gunOk ? ", the gun list extended to match" : ", BUT the gun list could not be extended"));
+        }
+
+        /// <summary>The DM11 round, so the fuse control can program it before firing.</summary>
+        internal static AmmoType Dm11Shell => _dm11Shell;
+
+        /// <summary>Sets how long after leaving the muzzle DM11 bursts; zero is a contact fuze.</summary>
+        internal static void SetDm11Fuse(float seconds)
+        {
+            if (_dm11Shell == null) return;
+            _dm11Shell.RangedFuseTime = Mathf.Max(0f, seconds);
         }
 
         /// <summary>
@@ -416,7 +620,13 @@ namespace Leopard2A7V
                 EnsureVisual(donorApClip);
                 return _clip;
             }
-            if (!Build(donorApClip, ShellName, PenetrationMm, MuzzleVelocity, ProjectileMassKg, false)) _failed = true;
+            bool dm73 = LpConfig.CarriesDm73;
+            if (!Build(donorApClip,
+                       dm73 ? Dm73Name : ShellName,
+                       dm73 ? Dm73PenetrationMm : PenetrationMm,
+                       dm73 ? Dm73MuzzleVelocity : MuzzleVelocity,
+                       dm73 ? Dm73MassKg : ProjectileMassKg,
+                       dm73 ? 1 : 0)) _failed = true;
             return _clip;
         }
 
@@ -472,7 +682,8 @@ namespace Leopard2A7V
         }
 
         private static bool Build(AmmoClipCodexScriptable donorClip, string name, float penetration,
-            float velocity, float mass, bool secondary)
+            float velocity, float mass, int slot,
+            AmmoType.AmmoCategory? category = null, AmmoType.AmmoShortName? shortName = null)
         {
             AmmoType source = donorClip.ClipType.MinimalPattern[0].AmmoType;
             if (source == null) return false;
@@ -494,6 +705,8 @@ namespace Leopard2A7V
             // The impact-effect and decal databases key their tables by this index, and the copy has not been
             // cached against anything yet - the donor's index would point at the donor's row.
             shell.CachedIndex = -1;
+            if (category.HasValue) shell.Category = category.Value;
+            if (shortName.HasValue) shell.ShortName = shortName.Value;
 
             var codex = ScriptableObject.CreateInstance<AmmoCodexScriptable>();
             codex.name = "L2A7V_" + name;
@@ -514,17 +727,23 @@ namespace Leopard2A7V
             clip.ClipType = clipType;
             clip.CompatibleWeaponSystems = donorClip.CompatibleWeaponSystems;
 
-            if (secondary)
+            switch (slot)
             {
-                _dm73Shell = shell;
-                _dm73Codex = codex;
-                _dm73Clip = clip;
-            }
-            else
-            {
-                _shell = shell;
-                _codex = codex;
-                _clip = clip;
+                case 1:
+                    _dm73Shell = shell;
+                    _dm73Codex = codex;
+                    _dm73Clip = clip;
+                    break;
+                case 2:
+                    _dm11Shell = shell;
+                    _dm11Codex = codex;
+                    _dm11Clip = clip;
+                    break;
+                default:
+                    _shell = shell;
+                    _codex = codex;
+                    _clip = clip;
+                    break;
             }
 
             if (source.VisualModel != null) AttachVisualFor(source, codex, shell, name);

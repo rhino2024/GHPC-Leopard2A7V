@@ -211,6 +211,7 @@ namespace Leopard2A7V
             UniformArmor[] stored = unitRoot.GetComponentsInChildren<UniformArmor>(true);
             foreach (UniformArmor armor in stored)
             {
+                if (armor.transform.name.StartsWith("L2A7V_OwnArmour", StringComparison.Ordinal)) continue;
                 Zone zone;
                 string via;
                 if (!TryMatch(armor.transform.name, armor.Name, out zone, used, out via)) continue;
@@ -231,6 +232,7 @@ namespace Leopard2A7V
             VariableArmor[] raycast = unitRoot.GetComponentsInChildren<VariableArmor>(true);
             foreach (VariableArmor armor in raycast)
             {
+                if (armor.transform.name.StartsWith("L2A7V_OwnArmour", StringComparison.Ordinal)) continue;
                 Zone zone;
                 string via;
                 if (!TryMatch(armor.transform.name, armor.Name, out zone, used, out via)) continue;
@@ -260,7 +262,7 @@ namespace Leopard2A7V
                             stored.Length + " uniform + " + raycast.Length + " raycast-measured, armour " +
                             "coefficient x" + scale.ToString("0.00") + sb);
 
-            if (unmatched.Count > 0) DumpIdentities(stored, raycast);
+            if (unmatched.Count > 0 && _DumpedIdentities.Add(unitRoot.name)) DumpIdentities(stored, raycast);
             return true;
         }
 
@@ -269,6 +271,7 @@ namespace Leopard2A7V
         /// still has no armour at all, which is what the spawn looks like before the art pass fills it in.
         /// </summary>
         private static readonly HashSet<string> _Reported = new HashSet<string>(StringComparer.Ordinal);
+    private static readonly HashSet<string> _DumpedIdentities = new HashSet<string>(StringComparer.Ordinal);
 
         /// <summary>
         /// When zones went unmatched this is the only way to find out what the runtime pieces are actually
@@ -353,6 +356,55 @@ namespace Leopard2A7V
         };
 
         /// <summary>Looks a piece up by the same rules the value pass uses, for callers that build their own.</summary>
+        /// <summary>
+        /// The zone an x-ray module belongs to, by the group token its source note carries ("hull_01",
+        /// "turret_03"). Firewalls and spall liners have no published figure of their own, so they take the
+        /// little that is known: a firewall stops fragments, a liner only catches spall.
+        /// </summary>
+        internal static bool TryZoneForXrayGroup(string groupName, out float ke, out float ce, out string zoneName)
+        {
+            string token = TokenOf(groupName);
+            foreach (KeyValuePair<string, Zone> entry in Table)
+            {
+                if (entry.Value.Source == null) continue;
+                if (entry.Value.Source.IndexOf(token, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                ke = entry.Value.Ke;
+                ce = entry.Value.Ce;
+                zoneName = entry.Key;
+                return true;
+            }
+
+            if (token.StartsWith("firewall", StringComparison.OrdinalIgnoreCase))
+            {
+                ke = 30f;
+                ce = 60f;
+                zoneName = "firewall armour";
+                return true;
+            }
+            if (token.StartsWith("spall_liner", StringComparison.OrdinalIgnoreCase))
+            {
+                ke = 8f;
+                ce = 15f;
+                zoneName = "spall liner";
+                return true;
+            }
+
+            ke = ce = 0f;
+            zoneName = null;
+            return false;
+        }
+
+        private static string TokenOf(string groupName)
+        {
+            string name = groupName;
+            if (name.StartsWith("composite_armor_", StringComparison.OrdinalIgnoreCase))
+                name = name.Substring("composite_armor_".Length);
+            else if (name.StartsWith("firewall_armor_", StringComparison.OrdinalIgnoreCase))
+                name = "firewall_" + name.Substring("firewall_armor_".Length);
+            name = name.Replace("_xray", string.Empty);
+            return name;
+        }
+
         internal static bool TryResolve(string name, string label, HashSet<string> used, out Zone zone)
         {
             string via;
