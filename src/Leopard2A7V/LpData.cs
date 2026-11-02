@@ -47,6 +47,9 @@ namespace Leopard2A7V
 
         internal static readonly List<string> VanillaOff = new List<string>();
 
+        internal static readonly Dictionary<string, string> CodexOverrides =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
         internal static readonly List<Hatch> Hatches = new List<Hatch>();
 
         internal static void Load()
@@ -78,6 +81,7 @@ namespace Leopard2A7V
                             case "armour": ReadArmour(f); break;
                             case "vanilla_off": ReadVanillaOff(f); break;
                             case "hatch": ReadHatch(f); break;
+                            case "codex": ReadCodex(f); break;
                             default: bad++; break;
                         }
                     }
@@ -108,6 +112,12 @@ namespace Leopard2A7V
                 Layers = Mathf.Clamp(Mathf.RoundToInt(Float(f[4])), 1, 6),
             };
             Armours[f[1].Trim()] = entry;
+        }
+
+        private static void ReadCodex(string[] f)
+        {
+            if (f.Length < 3) return;
+            CodexOverrides[f[1].Trim()] = f[2].Trim();
         }
 
         private static void ReadVanillaOff(string[] f)
@@ -163,6 +173,14 @@ namespace Leopard2A7V
             ke = ce = 0f;
             layers = 0;
             return false;
+        }
+
+        /// <summary>The codex name fragment the table assigns to this group, if any.</summary>
+        internal static string CodexFor(string groupName)
+        {
+            Load();
+            string fragment;
+            return CodexOverrides.TryGetValue(groupName, out fragment) ? fragment : null;
         }
 
         internal static bool IsVanillaOff(string plateName)

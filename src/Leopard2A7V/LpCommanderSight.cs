@@ -778,24 +778,46 @@ namespace Leopard2A7V
         }
 
 
+        private bool _stabSaved;
+        private bool _savedStabsActive;
+
+        /// <summary>
+        /// Puts the vehicle's stabiliser on while the commander is in the sight, then puts it back exactly as it
+        /// was.
+        ///
+        /// This used to force everything off on the way out, and the gunner's sight then no longer commanded
+        /// the turret: the fire control has to have its stabs active for the sight to lay the gun, so leaving
+        /// the commander's sight silently put the gunner into free-look. The state is now remembered and
+        /// restored instead of assumed.
+        /// </summary>
         private void SetVehicleStab(bool on)
         {
             ResolveFcs();
             FireControlSystem fcs = _fcs;
             if (fcs == null) return;
+
             if (on)
             {
-                fcs.CurrentStabMode = (StabilizationMode)1;
+                if (!_stabSaved)
+                {
+                    _savedStabsActive = fcs.StabsActive;
+                    _stabSaved = true;
+                }
+                // Only the active flag is touched. Writing CurrentStabMode as well switched the vehicle from
+                // point stabilisation to direction stabilisation, and the player had to set it back by hand
+                // every time the commander's sight had been used.
                 fcs.SetStabsActive(true);
-                fcs.SuperelevateWeapon = true;
+                MelonLogger.Msg("[L2A7V] commander sight stabiliser on");
+                return;
             }
-            else
+
+            if (_stabSaved)
             {
-                fcs.SuperelevateWeapon = false;
-                fcs.SetStabsActive(false);
-                fcs.CurrentStabMode = (StabilizationMode)0;
+                fcs.SetStabsActive(_savedStabsActive);
+                _stabSaved = false;
             }
-            MelonLogger.Msg("[L2A7V] commander sight stabiliser " + (on ? "on" : "off"));
+            MelonLogger.Msg("[L2A7V] commander sight stabiliser restored (stabs " +
+                            (_savedStabsActive ? "on" : "off") + ")");
         }
 
         private void HideHeadArt()

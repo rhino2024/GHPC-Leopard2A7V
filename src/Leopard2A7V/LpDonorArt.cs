@@ -227,6 +227,13 @@ namespace Leopard2A7V
         {
             Renderer[] donor = LpBaseRig.DonorSnapshot;
             if (donor == null) return;
+
+            if (Time.unscaledTime >= _nextRescan)
+            {
+                _nextRescan = Time.unscaledTime + 2f;
+                RescanDonorArt();
+            }
+
             int hidden = 0;
             foreach (Renderer renderer in donor)
             {
@@ -242,9 +249,79 @@ namespace Leopard2A7V
             }
         }
 
+        /// <summary>
+        /// Picks up donor renderers that were not in the snapshot.
+        ///
+        /// The snapshot is taken just before the conversion, but the donor's own art pass runs a moment later and
+        /// can add renderers - the camouflage net is one of them. Those never made it into the list, so they
+        /// stayed visible and the old hull showed through. A scan every couple of seconds is cheap.
+        /// </summary>
+        private static void RescanDonorArt()
+        {
+            Renderer[] snapshot = LpBaseRig.DonorSnapshot;
+            if (_convertedUnit == null) return;
+
+            HideLeftovers();
+
+            var known = new System.Collections.Generic.HashSet<Renderer>(snapshot ?? new Renderer[0]);
+            var list = new System.Collections.Generic.List<Renderer>(known);
+            int added = 0;
+            foreach (Renderer renderer in _convertedUnit.GetComponentsInChildren<Renderer>(true))
+            {
+                if (renderer == null || known.Contains(renderer)) continue;
+                if (renderer is ParticleSystemRenderer) continue;
+                if (LpVisual.IsImportedArt(renderer.transform)) continue;
+                if (!LpBaseRig.ShouldHide(renderer.transform, renderer.name)) continue;
+                list.Add(renderer);
+                added++;
+            }
+            if (added == 0) return;
+            LpBaseRig.DonorSnapshot = list.ToArray();
+            MelonLogger.Msg("[L2A7V] guard picked up " + added + " late donor renderer(s)");
+        }
+
         private bool _gunDone;
+        /// <summary>
+        /// Hides every renderer under the unit that does not belong to this mod's art.
+        ///
+        /// This is the T-90A mod's HideLeftovers rule and it is deterministic: the donor is whatever is left
+        /// over once the art pass has put our own meshes in place, so there is no list to keep in step and no
+        /// heuristic to get the camouflage net wrong. Running gear stays when the configuration uses the
+        /// donor's, and the track-imprint brushes stay on their layer.
+        /// </summary>
+        private static int HideLeftovers()
+        {
+            if (_convertedUnit == null) return 0;
+            int hidden = 0;
+            var kept = new System.Collections.Generic.List<Renderer>();
+            foreach (Renderer renderer in _convertedUnit.GetComponentsInChildren<Renderer>(true))
+            {
+                if (renderer == null) continue;
+                if (renderer is ParticleSystemRenderer) continue;
+                if (LpVisual.IsImportedArt(renderer.transform)) { kept.Add(renderer); continue; }
+                if (renderer.gameObject.layer == LpBaseRig.ImprintLayer) { kept.Add(renderer); continue; }
+
+                string path = LpBaseRig.PathOf(renderer.transform).ToLowerInvariant();
+                bool runningGear = path.Contains("wheel") || path.Contains("track") || path.Contains("suspension");
+                if (LpConfig.UseDonorRunningGear && runningGear) { kept.Add(renderer); continue; }
+
+                if (renderer.enabled) { renderer.enabled = false; hidden++; }
+                if (renderer.transform.localScale != Vector3.zero)
+                    renderer.transform.localScale = Vector3.zero;
+            }
+
+            if (hidden > 0)
+            {
+                LpBaseRig.DonorSnapshot = kept.ToArray();
+                MelonLogger.Msg("[L2A7V] leftovers: hid " + hidden + " donor renderer(s), kept " +
+                                kept.Count + " (art, running gear, imprints)");
+            }
+            return hidden;
+        }
+
         private static GameObject _convertedUnit;
         private static bool _guardLogged;
+        private static float _nextRescan;
         private bool _armourDone;
         private bool _crewDone;
 

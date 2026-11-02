@@ -77,8 +77,10 @@ namespace Leopard2A7V
             Unit unit = LpFind.Unit(unitRoot);
             Transform frame = unit != null ? unit.transform : unitRoot.transform;
             Vector3 hullLocal = hull.InverseTransformPoint(frame.TransformPoint(LpConfig.Offset));
-            Vector3 turretLocal = -LpConfig.TurretAxis;
-            Vector3 gunLocal = -LpConfig.GunAxis;
+            // The turret and gun geometry has the ring and trunnion baked out of it, in the bundle and in the
+            // binary fallback alike, so those pieces go in at local zero - no anchor maths at run time.
+            Vector3 turretLocal = Vector3.zero;
+            Vector3 gunLocal = Vector3.zero;
             MelonLogger.Msg(Tag + " anchors: hull " + hullLocal.ToString("0.00") + " turret " +
                             turretLocal.ToString("0.00") + " gun " + gunLocal.ToString("0.00"));
 
@@ -128,7 +130,7 @@ namespace Leopard2A7V
                 if (LpData.TryArmour(group.Name, out _, out _, out int overrideLayers) && overrideLayers > 0)
                     layers = overrideLayers;
 
-                if (BuildOne(bone, anchor, group, ke, ce, zoneName, layers, CodexFor(group.Name))) built++;
+                if (BuildOne(bone, anchor, group, ke, ce, zoneName, layers, null)) built++;
             }
 
             int retired = built > 0 ? RetireDonorArmour(unitRoot) : 0;
@@ -231,34 +233,117 @@ namespace Leopard2A7V
         private static Codex[] CollectCodex(GameObject unitRoot)
         {
             var list = new System.Collections.Generic.List<Codex>();
+            int pieces = 0, typed = 0;
+
+            // Both armour classes carry a codex, and the donor's measured plates are the ones that usually have
+            // one. The first run found only the crew's flesh and bone, which means the uniform plates carry a
+            // display name (SetName) instead of a codex - worth counting so the log says which it is.
             foreach (UniformArmor piece in unitRoot.GetComponentsInChildren<UniformArmor>(true))
             {
-                if (piece == null || piece.ArmorType == null) continue;
+                if (piece == null) continue;
+                pieces++;
+                if (piece.ArmorType == null) continue;
+                typed++;
                 string name = piece.ArmorType.name;
                 if (string.IsNullOrEmpty(name)) name = piece.name;
                 bool seen = false;
                 foreach (Codex known in list) if (known.Name == name) { seen = true; break; }
                 if (!seen) list.Add(new Codex { Name = name, Type = piece.ArmorType });
             }
+            foreach (VariableArmor piece in unitRoot.GetComponentsInChildren<VariableArmor>(true))
+            {
+                if (piece == null) continue;
+                pieces++;
+                if (piece.ArmorType == null) continue;
+                typed++;
+                string name = piece.ArmorType.name;
+                if (string.IsNullOrEmpty(name)) name = piece.name;
+                bool seen = false;
+                foreach (Codex known in list) if (known.Name == name) { seen = true; break; }
+                if (!seen) list.Add(new Codex { Name = name, Type = piece.ArmorType });
+            }
+            MelonLogger.Msg(Tag + " donor pieces with a codex: " + typed + " of " + pieces);
             if (list.Count > 0)
                 MelonLogger.Msg(Tag + " donor armour codex: " + list.Count + " type(s) available to copy");
+                foreach (Codex codex in list) MelonLogger.Msg(Tag + "   " + codex.Name);
             return list.ToArray();
         }
 
         /// <summary>The donor codex closest to this group: same station first, then anything.</summary>
-        private static ArmorCodexScriptable CodexFor(string groupName)
+        /// <summary>
+        /// The donor codex that matches what this group actually is.
+        ///
+        /// Handing every plate the station's composite codex made a firewall behave like an array and a spall
+        /// liner behave like armour: the codex decides normalisation, long-rod shattering, ricochet and spall,
+        /// so the type has to follow the part, not the station. The order is: an explicit line in the data
+        /// table, then the part's own kind, then the station, then anything.
+        /// </summary>
+        private static ArmorCodexScriptable CodexFor(string groupName, Vector3 centre)
         {
-            string want = groupName.IndexOf("turret", StringComparison.OrdinalIgnoreCase) >= 0 ? "turret"
-                        : groupName.IndexOf("hull", StringComparison.OrdinalIgnoreCase) >= 0 ? "hull"
-                        : null;
-            if (want != null)
-                foreach (Codex codex in DonorCodex)
-                    if (codex.Name.IndexOf(want, StringComparison.OrdinalIgnoreCase) >= 0)
-                        return codex.Type;
-            foreach (Codex codex in DonorCodex)
-                if (codex.Name.IndexOf("array", StringComparison.OrdinalIgnoreCase) >= 0)
-                    return codex.Type;
+            string name = groupName.ToLowerInvariant();
+
+            // The donor exposes twelve real codexes; these are the ones that match our parts.
+            if (name.Contains("track")) return Match("tank tracks");
+            if (name.Contains("spall_liner") || name.Contains("liner")) return Match("composite skirts");
+            if (name.Contains("firewall")) return Match("US gun steel");
+            if (name.Contains("mantlet") || name.Contains("breech") || name.Contains("barrel"))
+                return Match("Leo 2 mantlet array");
+            if (name.Contains("turret"))
+            {
+                // A turret array is a front array when it faces forward, a side array when it faces sideways.
+                bool front = Mathf.Abs(centre.x) >= Mathf.Abs(centre.z);
+                ArmorCodexScriptable typed = Match(front ? "turret front array B tech" : "turret side array B tech");
+                if (typed != null) return typed;
+            }
+            if (name.Contains("hull")) return Match("Leo 2 hull array");
+
+            return CodexForStation(groupName);
+        }
+
+        private static ArmorCodexScriptable CodexForStation(string groupName)
+        {
+            string overrideName = LpData.CodexFor(groupName);
+            if (!string.IsNullOrEmpty(overrideName))
+            {
+                ArmorCodexScriptable explicitType = Match(overrideName);
+                if (explicitType != null) return explicitType;
+            }
+
+            string kind = KindOf(groupName);
+            if (kind != null)
+            {
+                ArmorCodexScriptable typed = Match(kind);
+                if (typed != null) return typed;
+            }
+
+            string station = groupName.IndexOf("turret", StringComparison.OrdinalIgnoreCase) >= 0 ? "turret"
+                           : groupName.IndexOf("hull", StringComparison.OrdinalIgnoreCase) >= 0 ? "hull"
+                           : null;
+            if (station != null)
+            {
+                ArmorCodexScriptable typed = Match(station);
+                if (typed != null) return typed;
+            }
             return DonorCodex.Length > 0 ? DonorCodex[0].Type : null;
+        }
+
+        /// <summary>What the part is made of, as a word the donor's codex names are likely to contain.</summary>
+        private static string KindOf(string groupName)
+        {
+            string name = groupName.ToLowerInvariant();
+            if (name.StartsWith("spall_liner") || name.Contains("liner")) return "spall";
+            if (name.StartsWith("firewall")) return "steel";
+            if (name.Contains("composite") || name.Contains("array")) return "array";
+            if (name.Contains("track")) return "track";
+            return null;
+        }
+
+        private static ArmorCodexScriptable Match(string fragment)
+        {
+            foreach (Codex codex in DonorCodex)
+                if (codex.Name.IndexOf(fragment, StringComparison.OrdinalIgnoreCase) >= 0)
+                    return codex.Type;
+            return null;
         }
 
         private static void SetPrivate(object target, string field, object value)
@@ -330,6 +415,7 @@ namespace Leopard2A7V
             armor.AngleMatters = true;
             armor.DetonatedObjects = Array.Empty<GameObject>();
             armor.UndetonatedObjects = Array.Empty<GameObject>();
+            if (codex == null) codex = CodexFor(group.Name, mesh.bounds.center);
             armor.CenterPoint = go.transform;
             armor.SetName(zoneName);
             if (codex != null) SetPrivate(armor, "_armorType", codex);

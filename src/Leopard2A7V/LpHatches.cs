@@ -60,13 +60,14 @@ namespace Leopard2A7V
             Transform match = FindByName(art, donorName) ?? FindByHatchNumber(art, donorName) ?? FindByRole(art, role);
             if (match == null) return 0;
 
-            Transform pivot = MakeHinge(match, role, part);
-            part.Transform = pivot != null ? pivot : match;
-            if (part.StartTransform == null) part.StartTransform = part.Transform;
-            if (part.EndTransform == null) part.EndTransform = part.Transform;
+            // The lids stay shut by design: they are docked to the art so the donor cannot drive them, but no
+            // hinge is fitted and nothing rotates them.
+            part.Transform = match;
+            if (part.StartTransform == null) part.StartTransform = match;
+            if (part.EndTransform == null) part.EndTransform = match;
 
             MelonLogger.Msg(Tag + " " + role + " hatch '" + donorName + "' -> '" + match.name +
-                            (pivot != null ? "' on a hinge" : "' (no hinge)"));
+                            "' (kept shut)");
             return 1;
         }
 
@@ -80,9 +81,11 @@ namespace Leopard2A7V
         {
             LpData.Hatch hatch = LpData.HatchFor(lid.name, role);
 
-            Bounds bounds = BoundsOf(lid);
+            Bounds bounds = LocalBounds(lid);
             Vector3 axis = hatch != null ? hatch.Axis : Vector3.forward;
             float degrees = hatch != null ? hatch.Degrees : 95f;
+            // Bounds are in the lid's own frame, so the point converts straight to world: the aft edge of the
+            // lid, half way up, on the lateral axis.
             Vector3 hingeLocal = hatch != null && hatch.HasHinge
                 ? hatch.Hinge
                 : new Vector3(bounds.min.x, bounds.center.y, bounds.center.z);
@@ -101,20 +104,22 @@ namespace Leopard2A7V
             return go.transform;
         }
 
-        private static Bounds BoundsOf(Transform node)
+        /// <summary>The lid's geometry bounds expressed in the lid's own frame.</summary>
+        private static Bounds LocalBounds(Transform node)
         {
             bool any = false;
-            Bounds bounds = new Bounds(node.position, Vector3.zero);
+            Bounds bounds = new Bounds(Vector3.zero, Vector3.zero);
             foreach (MeshFilter filter in node.GetComponentsInChildren<MeshFilter>(true))
             {
                 if (filter == null || filter.sharedMesh == null) continue;
-                Bounds local = filter.sharedMesh.bounds;
-                var world = new Bounds(filter.transform.TransformPoint(local.center),
-                                       filter.transform.TransformVector(local.size));
-                if (!any) { bounds = world; any = true; }
-                else bounds.Encapsulate(world);
+                Bounds mesh = filter.sharedMesh.bounds;
+                Vector3 centre = node.InverseTransformPoint(filter.transform.TransformPoint(mesh.center));
+                Vector3 size = node.InverseTransformVector(filter.transform.TransformVector(mesh.size));
+                var local = new Bounds(centre, new Vector3(Mathf.Abs(size.x), Mathf.Abs(size.y), Mathf.Abs(size.z)));
+                if (!any) { bounds = local; any = true; }
+                else bounds.Encapsulate(local);
             }
-            return any ? bounds : new Bounds(node.position, Vector3.zero);
+            return bounds;
         }
 
         private static Transform FindByName(Transform art, string name)

@@ -132,6 +132,10 @@ namespace Leopard2A7V
                     LpRunningGear.Attach(result.Hull, unit);
 
                 result.Turret = MakePivot(turretBone, "L2A7V_TurretPivot", Vector3.zero);
+                // The lids are merged back into the turret mesh on purpose. Taking them out and spawning them
+                // from a bundle gave every lid the wrong atlas slot (the bundle carries geometry only, and the
+                // turret's first material is not the one the lid was cut from) and put them in the wrong place.
+                // They are meant to stay shut anyway, and a merged lid is textured and positioned for free.
                 AttachGroup(result.Turret, "Turret", LpGroup.Turret, ring);
 
                 // The cupola sight tube and the anti-aircraft gun. The donor rotates its own PERI through
@@ -203,6 +207,12 @@ namespace Leopard2A7V
         private static float SafeReciprocal(float value)
         {
             return Mathf.Abs(value) < 1e-5f ? 1f : 1f / value;
+        }
+
+        private static bool IsLid(string partName)
+        {
+            return !string.IsNullOrEmpty(partName) &&
+                   partName.StartsWith("hatch_", StringComparison.OrdinalIgnoreCase);
         }
 
         private static void AttachGroup(Transform parent, string name, LpGroup group, Vector3 anchor)
