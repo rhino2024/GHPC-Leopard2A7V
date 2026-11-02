@@ -3,6 +3,8 @@ using System.Reflection;
 using GHPC;
 using GHPC.Player;
 using GHPC.Mission;
+using GHPC.Mission.Data;
+using GHPC.Weapons;
 using HarmonyLib;
 using MelonLoader;
 using UnityEngine;
@@ -19,23 +21,16 @@ namespace Leopard2A7V
         private static bool _installed;
 
         /// <summary>
-        /// The game reads its own "toggle night sight polarity" binding (bare T) and flips the active slot. Our
-        /// commander sight wants Ctrl+T, so the call is filtered here: without the modifier the press is
-        /// dropped, and the toggle's own handler does the work.
-        /// </summary>
-        [HarmonyPatch(typeof(PlayerInput), "ToggleFLIRPolarity")]
-        internal static class PolarityNeedsCtrl
-        {
-            private static bool Prefix()
-            {
-                return Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
-            }
-        }
-
+        /// Puts the 2A7V in place of the enemy's tanks, in every mission.
+        ///
+        /// <summary>Hooks the spawn path and the mission menu so a scenario can offer the 2A7V.</summary>
         public static void Install(HarmonyLib.Harmony harmony)
         {
             if (_installed) return;
             _installed = true;
+
+
+
 
             MethodInfo spawnerAwake = AccessTools.Method(typeof(UnitSpawner), "Awake");
             if (spawnerAwake != null)
@@ -170,6 +165,9 @@ namespace Leopard2A7V
             LpArmor.Apply(root);
             if (!LpXrayArmor.Build(root)) LpArmorOwn.Build(root);
             LpModules.Apply(root);
+            LpModulesOwn.Build(root);
+            LpHatches.Bind(root);
+            LpSmoke.Apply(root);
             // The pivots only have the artwork under them after the visual pass, so moving an axis here
             // would just offset a turret that is about to be parented. It runs from Convert instead.
             root.AddComponent<LpConvertBehaviour>();
@@ -212,6 +210,7 @@ namespace Leopard2A7V
             }
             if (!ObjModel.Loaded) return;
 
+            LpBaseRig.SnapshotDonor(transform);   // before our art is added, so the guard can tell them apart
             if (LpVisual.Convert(gameObject) != null)
             {
                 Destroy(this);
@@ -242,4 +241,5 @@ namespace Leopard2A7V
             return null;
         }
     }
+
 }

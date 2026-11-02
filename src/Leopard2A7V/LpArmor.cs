@@ -374,6 +374,24 @@ namespace Leopard2A7V
                 return true;
             }
 
+            // The x-ray model has eleven turret arrays and five hull arrays; the table only names a few of them,
+            // so the rest were built with no protection at all - a round into those panels passed straight
+            // through. Anything left over gets a conservative composite figure rather than nothing.
+            if (token.StartsWith("turret_", StringComparison.OrdinalIgnoreCase))
+            {
+                ke = 300f;
+                ce = 600f;
+                zoneName = "turret composite (unlisted)";
+                return true;
+            }
+            if (token.StartsWith("hull_", StringComparison.OrdinalIgnoreCase))
+            {
+                ke = 200f;
+                ce = 400f;
+                zoneName = "hull composite (unlisted)";
+                return true;
+            }
+
             if (token.StartsWith("firewall", StringComparison.OrdinalIgnoreCase))
             {
                 ke = 30f;

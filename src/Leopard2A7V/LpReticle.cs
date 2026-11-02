@@ -174,6 +174,11 @@ namespace Leopard2A7V
             return plate;
         }
 
+
+
+
+
+
         /// <summary>Fixed geometry: the mil cross, the tick scale and the range brackets.</summary>
         private static ReticleTree.Angular RoofGunScales()
         {

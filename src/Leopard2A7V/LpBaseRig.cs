@@ -3,6 +3,7 @@ using GHPC.Equipment.Optics;
 using System;
 using System.Collections.Generic;
 using System.Text;
+using GHPC;
 using MelonLoader;
 using UnityEngine;
 
@@ -111,7 +112,8 @@ namespace Leopard2A7V
                 renderer.enabled = false;
                 // The game's visibility pass can switch a renderer back on, so the transform is collapsed as
                 // well: a zero-scaled node draws nothing whatever happens to enabled.
-                if (renderer.transform.localScale != Vector3.zero)
+                if (renderer.GetComponentsInChildren<UniformArmor>(true).Length == 0 &&
+                    renderer.transform.localScale != Vector3.zero)
                     renderer.transform.localScale = Vector3.zero;
                 stripped++;
                 string path = PathOf(renderer.transform).ToLowerInvariant();
@@ -293,7 +295,41 @@ namespace Leopard2A7V
             return false;
         }
 
-        private static string PathOf(Transform node)
+        /// <summary>
+        /// The donor's own renderers, taken before the conversion adds ours. Everything the mod builds later
+        /// (the reticle plate, the commander sight head) hangs under the same rig bones, so the only reliable
+        /// way to tell "donor art" from "our art" is to look at what existed first.
+        /// </summary>
+        internal static Renderer[] DonorSnapshot;
+
+        internal static void SnapshotDonor(Transform unitRoot)
+        {
+            if (unitRoot == null) return;
+            var list = new System.Collections.Generic.List<Renderer>();
+            foreach (Renderer renderer in unitRoot.GetComponentsInChildren<Renderer>(true))
+            {
+                if (renderer == null) continue;
+                if (renderer is ParticleSystemRenderer) continue;
+                // Only the ones that are meant to go: the running gear and wheels are the donor's too, but the
+                // vehicle drives on them.
+                if (!ShouldHide(renderer.transform, renderer.name)) continue;
+                if (renderer.gameObject.layer == ImprintLayer) continue;
+                // Never touch anything inside an optic: the reticle plate lives under the sight housing, and
+                // collapsing that housing to zero scale takes the plate with it - which is why the gunnery
+                // sight had no aiming mark even though the log said the plate had been replaced.
+                if (renderer.GetComponentInParent<UsableOptic>() != null) continue;
+                // A hull that carries armour or the sight under it must not be zero-scaled: the colliders
+                // inherit the scale and shrink to nothing, which is exactly how the vehicle lost its hit
+                // detection and rounds started passing straight through.
+                if (renderer.GetComponentInChildren<UniformArmor>(true) != null) continue;
+                if (renderer.GetComponentInChildren(typeof(Reticle.ReticleMesh), true) != null) continue;
+                list.Add(renderer);
+            }
+            DonorSnapshot = list.ToArray();
+            MelonLogger.Msg("[L2A7V] donor snapshot: " + DonorSnapshot.Length + " renderer(s) before conversion");
+        }
+
+        internal static string PathOf(Transform node)
         {
             var builder = new StringBuilder(node.name);
             Transform parent = node.parent;

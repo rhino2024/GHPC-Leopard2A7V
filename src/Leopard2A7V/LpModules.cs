@@ -66,13 +66,31 @@ namespace Leopard2A7V
         {
             Transform node = zone.transform;
 
-            // A hit zone is a bare trigger in this game, but never risk dragging artwork: if anything under it
-            // draws, leave the module where the donor put it.
-            if (node.GetComponentInChildren<Renderer>(true) != null) return false;
-
             Vector3 current = space.InverseTransformPoint(node.position);
             float drift = (current - target.Centre).magnitude;
             if (drift < 0.05f) return false;
+
+            // If the zone draws anything, move its collider instead of its transform: dragging the transform
+            // would drag the artwork with it. This is why the zones were not moving at all before - the guard
+            // simply returned and the modules stayed on the donor's layout.
+            if (node.GetComponentInChildren<Renderer>(true) != null)
+            {
+                BoxCollider zoneBox = node.GetComponent<BoxCollider>();
+                if (zoneBox == null)
+                {
+                    // The donor zones are capsules as often as boxes; replacing the shape is fine, the zone is
+                    // a bare trigger either way.
+                    foreach (Collider extra in node.GetComponents<Collider>()) extra.enabled = false;
+                    zoneBox = node.gameObject.AddComponent<BoxCollider>();
+                }
+                zoneBox.center = node.InverseTransformPoint(space.TransformPoint(target.Centre));
+                Vector3 sizeLocal = node.InverseTransformVector(space.TransformVector(target.Size));
+                zoneBox.size = new Vector3(Mathf.Abs(sizeLocal.x), Mathf.Abs(sizeLocal.y), Mathf.Abs(sizeLocal.z));
+                zoneBox.isTrigger = false;
+                zoneBox.enabled = true;
+                MelonLogger.Msg(Tag + " moved the collider of '" + node.name + "' (kept its art in place)");
+                return true;
+            }
 
             // Put the hit zone's transform where the export says the module is, and give its collider the
             // module's own size. A box is used even where the donor had a capsule: the export only measures a

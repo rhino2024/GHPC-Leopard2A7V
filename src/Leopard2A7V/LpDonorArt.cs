@@ -223,43 +223,28 @@ namespace Leopard2A7V
 
         private float _elapsed;
         private float _next;
-        private static Renderer[] _donorRenderers;
-
         private static void RehideDonorArt()
         {
-            if (_convertedUnit == null)
-            {
-                LpConvertBehaviour converted = Object.FindObjectOfType<LpConvertBehaviour>();
-                if (converted == null) return;
-                _convertedUnit = converted.gameObject;
-                LpBaseRig.CollapseSkinDetailBones(_convertedUnit.transform);
-                // The list is built once: walking the whole rig every frame to find the same renderers is the
-                // expensive part of this guard, and the set does not change after the conversion.
-                var list = new System.Collections.Generic.List<Renderer>();
-                foreach (Renderer renderer in _convertedUnit.GetComponentsInChildren<Renderer>(true))
-                {
-                    if (renderer == null) continue;
-                    if (LpVisual.IsImportedArt(renderer.transform)) continue;
-                    if (renderer is ParticleSystemRenderer) continue;
-                    if (!LpBaseRig.ShouldHide(renderer.transform, renderer.name)) continue;
-                    list.Add(renderer);
-                }
-                _donorRenderers = list.ToArray();
-                MelonLogger.Msg("[L2A7V] guarding " + _donorRenderers.Length + " donor renderer(s) against the " +
-                                "game switching them back on");
-            }
-
-            if (_donorRenderers == null) return;
-            foreach (Renderer renderer in _donorRenderers)
+            Renderer[] donor = LpBaseRig.DonorSnapshot;
+            if (donor == null) return;
+            int hidden = 0;
+            foreach (Renderer renderer in donor)
             {
                 if (renderer == null) continue;
-                if (renderer.enabled) renderer.enabled = false;
+                if (renderer is ParticleSystemRenderer) continue;
+                if (renderer.enabled) { renderer.enabled = false; hidden++; }
                 if (renderer.transform.localScale != Vector3.zero) renderer.transform.localScale = Vector3.zero;
+            }
+            if (hidden > 0 && !_guardLogged)
+            {
+                _guardLogged = true;
+                MelonLogger.Msg("[L2A7V] guard switched " + hidden + " donor renderer(s) back off");
             }
         }
 
         private bool _gunDone;
         private static GameObject _convertedUnit;
+        private static bool _guardLogged;
         private bool _armourDone;
         private bool _crewDone;
 

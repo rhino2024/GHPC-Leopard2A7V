@@ -29,9 +29,6 @@ namespace Leopard2A7V
 
         public static MelonPreferences_Entry<string> Ammo;
 
-        public static MelonPreferences_Entry<int> ArmorLayers;
-
-        public static MelonPreferences_Entry<string> ThermalKey;
 
         public static float ArmorScale
         {
@@ -250,8 +247,6 @@ namespace Leopard2A7V
             Category = MelonPreferences.CreateCategory("Leopard2A7V", "Leopard 2A7V tank model swap");
 
             // G collides with smoke and T is the game's own polarity key, so the channel key is a setting.
-            ThermalKey = Category.CreateEntry("ThermalKey", "T",
-                "Key that switches the commander sight between white light and thermal (KeyCode name)");
 
             Skin = Category.CreateEntry("Skin", "",
                 "Paint scheme: factory, nato, desert, winter, parade");
@@ -261,9 +256,6 @@ namespace Leopard2A7V
 
             ArmorCoefficient = Category.CreateEntry("ArmorCoefficient", 1.2f,
                 "Armour strength multiplier over every zone (1 = real-data protection, 0.3-3)");
-
-            ArmorLayers = Category.CreateEntry("ArmorLayers", 3,
-                "How many plates a composite array is split into (1 = one等效块, 3-4 = 逐层消耗, like the vanilla hulls)");
 
             Ammo = Category.CreateEntry("Ammo", "dm73",
                 "APFSDS round: dm53 (1750 m/s) or dm73 (1780 m/s)");

@@ -37,6 +37,10 @@
       <HintPath>$(GameDir)\GHPC_Data\Managed\UnityEngine.PhysicsModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.AnimationModule">
+      <HintPath>$(GameDir)\GHPC_Data\Managed\UnityEngine.AnimationModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.ParticleSystemModule">
       <HintPath>$(GameDir)\GHPC_Data\Managed\UnityEngine.ParticleSystemModule.dll</HintPath>
       <Private>false</Private>

@@ -426,7 +426,7 @@ namespace Leopard2A7V
             slot.ExclusiveWeapons = Array.Empty<WeaponSystem>();
             slot.BaseBlur = 0f;
             slot.VibrationBlurScale = GlassVibrationBlur;
-            slot.VibrationShakeMultiplier = GlassVibrationShake;
+            slot.VibrationShakeMultiplier = 0f;   // stabilised: no vehicle shake in the picture
             if (SlotReparentTarget != null) SlotReparentTarget.SetValue(slot, null);
         }
 
@@ -564,7 +564,10 @@ namespace Leopard2A7V
         private float _parentYaw;
         private float _parentPitch;
         private bool _haveParent;
-        private bool _overrideTurret;
+        private static LpCommanderToggle _active;
+        private bool _mgMode;
+        private Transform _mgYaw, _mgPitch;
+        private bool _platformLogged;
         private AimablePlatform _turretPlatform;
         private float _nextMount;
 
@@ -578,7 +581,7 @@ namespace Leopard2A7V
             // Every unit runs its own toggle, so without this a Z press is handled by all of them and the last
             // one to call the camera manager wins - which is how the commander's sight of a teammate's tank
             // could come up instead. Only the unit the player is driving answers the key.
-            if (!IsPlayerUnit()) return;
+            if (_active != null && _active != this) return;   // another commander sight is already open
 
             if (Input.GetKeyDown(KeyCode.Z))
             {
@@ -586,6 +589,8 @@ namespace Leopard2A7V
                 {
                     manager.ResetTempAttach();
                     _inside = false;
+                    SetVehicleStab(false);
+                    if (_active == this) _active = null;
                 }
                 else
                 {
@@ -599,6 +604,8 @@ namespace Leopard2A7V
                         }
                         return;
                     }
+                    _active = this;
+                    SetVehicleStab(true);
                     _yaw = 0f;
                     _pitch = 0f;
                     if (Sight != null) Sight.localRotation = Quaternion.identity;
@@ -630,15 +637,15 @@ namespace Leopard2A7V
 
             // G, not T: the game uses T for the white-hot/black-hot polarity while the sight is on
             // thermal, so sharing it made one press change the polarity and drop back to daylight.
-            if (Input.GetKeyDown(KeyCode.B))
+            // V switches the same optic over to the anti-aircraft gun: the camera sits behind and above the MG3
+            // and the mouse drives the mount itself, which is as close to leaning over the gun as a camera gets.
+            if (_inside && Input.GetKeyDown(KeyCode.V))
             {
-                _overrideTurret = !_overrideTurret;
-                MelonLogger.Msg("[L2A7V] commander override " + (_overrideTurret ? "on" : "off"));
-                if (!_overrideTurret) ReleaseOverride();
+                _mgMode = !_mgMode;
+                MelonLogger.Msg("[L2A7V] MG view " + (_mgMode ? "on" : "off"));
+                if (!_mgMode && Sight != null) Sight.localRotation = Quaternion.Euler(_pitch, _yaw, 0f);
             }
 
-            if (_overrideTurret && _inside) DriveOverride();
-            else if (_overrideTurret && !_inside) ReleaseOverride();
 
             // Wheel, like the gunner's sight: the custom slot is not part of the game's zoom bindings, so the
             // stops have to be cycled here. Up zooms in, down zooms out.
@@ -648,12 +655,15 @@ namespace Leopard2A7V
                 if (Mathf.Abs(wheel) > 0.001f && Slot != null) Slot.CycleZoom(wheel > 0f);
             }
 
-            // Polarity on Ctrl+T rather than the game's bare T, which collides with the thermal channel key on
-            // other sights. The game's own T is swallowed by the patch installed with this mod.
-            bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
-            if (_inside && ctrl && Input.GetKeyDown(KeyCode.T) && Slot != null) Slot.ToggleFLIRPolarity();
+            // Two keys that must not overlap: Ctrl alone flips the thermal polarity, bare T switches between
+            // the optical and thermal channels. Without the modifier test the channel key fired first and the
+            // picture fell back to daylight before the polarity even changed.
+            bool ctrlHeld = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
+            if (_inside && !ctrlHeld && Input.GetKeyDown(KeyCode.T)) SwitchThermal();
 
-            if (_inside && Input.GetKeyDown(ThermalKeyCode())) SwitchThermal();
+            if (_inside && Slot != null &&
+                (Input.GetKeyDown(KeyCode.LeftControl) || Input.GetKeyDown(KeyCode.RightControl)))
+                Slot.ToggleFLIRPolarity();
 
             if (_inside)
             {
@@ -661,7 +671,11 @@ namespace Leopard2A7V
                 // picture while the world swings past it - which is what a commander's panoramic sight does.
                 // 360 degrees: a commander's panoramic sight has no end stop, so the head keeps turning and
                 // only the pitch is limited. Clamping yaw was what made it read as a 40 degree slot.
-                _yaw = Mathf.Repeat(_yaw + Input.GetAxisRaw("Mouse X") * Sensitivity + 180f, 360f) - 180f;
+                float mouseYaw = Input.GetAxisRaw("Mouse X") * Sensitivity;
+                _yaw = Mathf.Repeat(_yaw + mouseYaw + 180f, 360f) - 180f;
+                // The fire control is fed from this one, which only ever moves with the mouse. Feeding it the
+                // compensated angle made the turret chase the picture that was chasing the turret: that loop is
+                // what shook the view.
                 _pitch = Mathf.Clamp(_pitch - Input.GetAxisRaw("Mouse Y") * Sensitivity, -PitchLimit, PitchLimit);
 
                 // Stabilisation. The head hangs under the turret, so every degree the hull or turret turns is a
@@ -718,41 +732,70 @@ namespace Leopard2A7V
         /// front of this eyepiece, and scaling the node rather than disabling the renderer is what survives the
         /// vehicle's own visibility pass putting renderers back on.
         /// </summary>
-        /// <summary>True when this toggle belongs to the vehicle the player is driving.</summary>
-        private bool IsPlayerUnit()
-        {
-            PlayerInput input = PlayerInput.Instance;
-            if (input == null) return false;
-            Unit current = input.CurrentPlayerUnit;
-            return current != null && Unit != null && current == Unit;
-        }
-
         private AimablePlatform TurretPlatform()
         {
             if (_turretPlatform != null) return _turretPlatform;
             Unit unit = Unit == null ? null : Unit.GetComponent<Unit>();
             if (unit == null) return null;
+
+            AimablePlatform fallback = null;
             foreach (AimablePlatform platform in unit.GetComponentsInChildren<AimablePlatform>(true))
             {
                 if (platform == null || platform.Transform == null) continue;
-                if (platform.Axis.ToString() != "Y") continue;
-                _turretPlatform = platform;
-                break;
+                string path = LpBaseRig.PathOf(platform.Transform).ToLowerInvariant();
+                if (!_platformLogged)
+                    MelonLogger.Msg("[L2A7V] aimable platform '" + platform.Name + "' axis=" + platform.Axis +
+                                    " at " + path);
+                if (platform.Axis.ToString() == "Y" || path.Contains("turret"))
+                {
+                    _turretPlatform = platform;
+                    break;
+                }
+                if (fallback == null && !path.Contains("gun") && !path.Contains("mantlet")) fallback = platform;
             }
+            if (_turretPlatform == null) _turretPlatform = fallback;
+            _platformLogged = true;
+            if (_turretPlatform == null)
+                MelonLogger.Warning("[L2A7V] no turret platform found on " + unit.name + " (stabiliser stays off)");
+            else
+                MelonLogger.Msg("[L2A7V] turret platform '" + _turretPlatform.Name + "' (axis " +
+                                _turretPlatform.Axis + ")");
             return _turretPlatform;
         }
 
-        private void DriveOverride()
+        private FireControlSystem _fcs;
+
+        /// <summary>
+
+
+
+
+        private void ResolveFcs()
         {
-            AimablePlatform platform = TurretPlatform();
-            if (platform == null || Sight == null) return;
-            platform.SetAimVector(Sight.forward, true, true);
+            if (_fcs != null) return;
+            Unit unit = Unit == null ? null : Unit.GetComponent<Unit>();
+            if (unit != null) _fcs = unit.GetComponentInChildren<FireControlSystem>(true);
         }
 
-        private void ReleaseOverride()
+
+        private void SetVehicleStab(bool on)
         {
-            AimablePlatform platform = TurretPlatform();
-            if (platform != null) platform.UnsetAimVector();
+            ResolveFcs();
+            FireControlSystem fcs = _fcs;
+            if (fcs == null) return;
+            if (on)
+            {
+                fcs.CurrentStabMode = (StabilizationMode)1;
+                fcs.SetStabsActive(true);
+                fcs.SuperelevateWeapon = true;
+            }
+            else
+            {
+                fcs.SuperelevateWeapon = false;
+                fcs.SetStabsActive(false);
+                fcs.CurrentStabMode = (StabilizationMode)0;
+            }
+            MelonLogger.Msg("[L2A7V] commander sight stabiliser " + (on ? "on" : "off"));
         }
 
         private void HideHeadArt()
@@ -769,13 +812,6 @@ namespace Leopard2A7V
         /// and that mode reaches both the picture and the environment from swapCameras alone, so a commander
         /// looking through his own sight with the free-look camera off would have nothing change.
         /// </summary>
-        /// <summary>The channel key as a KeyCode, so a collision with a game binding is a setting away.</summary>
-        private static KeyCode ThermalKeyCode()
-        {
-            string name = LpConfig.ThermalKey == null ? "K" : (LpConfig.ThermalKey.Value ?? "K").Trim();
-            KeyCode key;
-            return System.Enum.TryParse(name, true, out key) ? key : KeyCode.K;
-        }
 
         private void SwitchThermal()
         {
