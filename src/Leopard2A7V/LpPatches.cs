@@ -146,6 +146,7 @@ namespace Leopard2A7V
             Guard("gun arc", root, () => LpWeapons.ApplyGunArc(root));
             Guard("reticle", root, () => LpReticle.Apply(root.transform));
             Guard("commander's sight", root, () => LpCommanderSight.Apply(root));
+            Guard("commander night vision", root, () => LpCommanderNvg.Apply(root));
 
             if (root.GetComponent<LpConvertBehaviour>() != null) return;
 

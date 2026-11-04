@@ -1,5 +1,11 @@
-﻿# 版本
+# 版本
 
+## 0.2.1
+
+- **车长热成像改到游戏原版车长视角上**：按 `C` 切到车长（还没进镜的自由视角）后按 `T`，直接把**当前这个视角**切成车长塔镜的热成像，松开再按一次回玻璃。不再跳到供体给的夜视仪槽位，因为视角本身没有换、也没有脱离这个 slot —— 自由观察、激光测距与目标指示、车长超控炮塔、车顶武器全部按原版照旧。
+  - 实现上仍走游戏自己的槽位接线（`CameraSlot.ThisActiveChanged`）：把 `VisionType` 写成 `Thermal`、给分辨率/滤波/零模糊，再让游戏把那套参数交给 `FLIRCamera`。手动开关热像相机会让渲染状态捕获错位，下一次白光视角会画成热像。
+  - 供体给这个视角挂的 `LinkedNightSight` 被摘掉：否则入夜时游戏会自己把相机挂到那个夜视仪上，把热成像顶掉。
+  - 日志：`[L2A7V][cmdr-nv] commander view '...commander head': detached the donor's night sight ...`、`... on the thermal camera (...)`、`... back on the glass`。
 ## 0.2.0
 
 第一个正式发布版。相对 0.1.x 的变化，按玩家能感知的顺序：
