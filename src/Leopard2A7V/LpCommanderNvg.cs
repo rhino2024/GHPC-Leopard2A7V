@@ -131,13 +131,39 @@ namespace Leopard2A7V
             if (input == null) return;
             GHPC.Unit player = LpSmoke.CurrentPlayerUnit(input);
             if (player == null || player.gameObject != gameObject) return;
-            if (CameraSlot.ActiveInstance != Slot) return;
 
+            bool down = Input.GetKeyDown(KeyCode.T);
             bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
-            if (ctrl) return;                       // Ctrl+T stays the game's polarity key
-            if (!Input.GetKeyDown(KeyCode.T)) return;
+
+            if (CameraSlot.ActiveInstance != Slot)
+            {
+                // Once per session, and only when the key is actually ours to see: this is the line that says
+                // the handler is alive but the commander view is not the slot it was pointed at.
+                if (down && !_notedMismatch)
+                {
+                    _notedMismatch = true;
+                    CameraSlot active = CameraSlot.ActiveInstance;
+                    MelonLogger.Msg(Tag + " T seen, but the active view is '" +
+                                    (active == null ? "<none>" : Path(active.transform)) +
+                                    "' and not the commander view '" + Path() + "'");
+                }
+                return;
+            }
+
+            if (!down || ctrl) return;               // Ctrl+T stays the game's polarity key
 
             Toggle();
+        }
+
+        private bool _notedMismatch;
+
+        private static string Path(Transform node)
+        {
+            if (node == null) return "<null>";
+            string path = node.name;
+            for (Transform parent = node.parent; parent != null; parent = parent.parent)
+                path = parent.name + "/" + path;
+            return path;
         }
 
         internal void Toggle()
