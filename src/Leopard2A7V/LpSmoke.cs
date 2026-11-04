@@ -185,16 +185,45 @@ namespace Leopard2A7V
             return true;
         }
 
-        /// <summary>CurrentPlayerUnit is a property on some builds and a field on others; ask both.</summary>
+        /// <summary>
+        /// The unit the player is driving.
+        ///
+        /// The shipped build declares this as a public field (<c>public Unit CurrentPlayerUnit;</c>). This
+        /// helper used to look for a property first and then for a non-public field only, so it matched
+        /// neither shape and answered "no player" on every frame of every session. Every caller reads that
+        /// answer as "this vehicle is not mine yet", so the commander's T key and the smoke key went silent
+        /// instead of reporting anything - which is exactly what "T does nothing at the commander" looked
+        /// like. Both shapes are asked for here, with every visibility, so a build that moves the member
+        /// cannot bring that silence back.
+        /// </summary>
         internal static GHPC.Unit CurrentPlayerUnit(GHPC.Player.PlayerInput input)
         {
-            System.Type type = input.GetType();
-            var property = type.GetProperty("CurrentPlayerUnit",
+            if (input == null) return null;
+            const System.Reflection.BindingFlags Any =
                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public |
-                System.Reflection.BindingFlags.NonPublic);
-            if (property != null) return property.GetValue(input) as GHPC.Unit;
-            var field = type.GetField("CurrentPlayerUnit", Private);
-            return field == null ? null : field.GetValue(input) as GHPC.Unit;
+                System.Reflection.BindingFlags.NonPublic;
+
+            System.Type type = input.GetType();
+            try
+            {
+                var property = type.GetProperty("CurrentPlayerUnit", Any);
+                if (property != null && property.CanRead && property.GetIndexParameters().Length == 0)
+                    return property.GetValue(input, null) as GHPC.Unit;
+            }
+            catch (System.Exception)
+            {
+                // An ambiguous or throwing property must not hide the field that is actually there.
+            }
+
+            try
+            {
+                var field = type.GetField("CurrentPlayerUnit", Any);
+                return field == null ? null : field.GetValue(input) as GHPC.Unit;
+            }
+            catch (System.Exception)
+            {
+                return null;
+            }
         }
 
         private static Transform FindDeep(Transform root, string name)

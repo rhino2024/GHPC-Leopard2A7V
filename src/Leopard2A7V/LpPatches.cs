@@ -145,11 +145,10 @@ namespace Leopard2A7V
             Guard("weapons", root, () => LpWeapons.Apply(root));
             Guard("gun arc", root, () => LpWeapons.ApplyGunArc(root));
             Guard("reticle", root, () => LpReticle.Apply(root.transform));
-            // The commander's own Z sight is gone: the commander now looks through the game's own cupola view,
-            // and its thermal channel is switched there. Building the sight meant cloning an interior eyepiece
-            // and mounting it on the sight head, and that copy is what took the picture away from the views the
-            // vehicle already had - the backup sight lost its plate and T at the commander did nothing.
-            Guard("commander night vision", root, () => LpCommanderNvg.Apply(root));
+            // The commander's night channel is the game's own: pressing T attaches the linked night sight, and
+            // that slot is moved onto the cupola sight and stated as a thermal imager (LpCommanderNvg). Nothing
+            // is cloned here, so the views the vehicle already has keep their own picture.
+            Guard("commander night channel", root, () => LpCommanderNvg.Apply(root));
 
             if (root.GetComponent<LpConvertBehaviour>() != null) return;
 

@@ -160,6 +160,7 @@ namespace Leopard2A7V
             scripts.transform.localRotation = Quaternion.identity;
 
             RefreshCaches(unitRoot, slot, AppendWeapon(manager, weapon, fcs));
+            LpRoofGunView.Attach(unitRoot, weapon, slot);
 
             Vector3 bore = weapon.transform.position;
             MelonLogger.Msg($"[L2A7V] roof gun armed: '{WeaponName}' on a cloned coaxial MG3, " +
@@ -361,7 +362,11 @@ namespace Leopard2A7V
             slot.ExclusiveItems = Array.Empty<GameObject>();
             slot.ZeroScaleItems = Array.Empty<Transform>();
             slot.OtherFovs = Array.Empty<float>();
-            slot.ExclusiveWeapons = new[] { weapon };
+            // No ExclusiveWeapons on purpose. The game's availability rule would mark the sight unusable the
+            // moment the main gun is selected, and an active slot that turns unusable hands the camera to
+            // SlotToUseOnDestroy - null here - which is the drop to third person that switching back to the
+            // main gun used to cause. LpRoofGunView owns entering and leaving this sight instead.
+            slot.ExclusiveWeapons = Array.Empty<WeaponSystem>();
             if (SlotReparentTarget != null) SlotReparentTarget.SetValue(slot, null);
 
             float donorFov = slot.DefaultFov;
@@ -510,6 +515,103 @@ namespace Leopard2A7V
                 _codex.Type = donor.Type;
             }
             WeaponCodexField.SetValue(weapon, _codex);
+        }
+    }
+
+    /// <summary>
+    /// Moves the view into the MG3's own sight the moment the crew selects the roof gun, and back out when it is
+    /// deselected - the arrangement the vanilla cupola machine guns have, and the one the 2A7HU's roof gun uses.
+    ///
+    /// The game's authored route for that is <see cref="CameraSlot.ExclusiveWeapons"/>, which a converted vehicle
+    /// cannot use safely: RepopulateValidSlots re-applies the last crew member's weapon to every exclusive slot,
+    /// so our slot flips unusable according to what someone else holds, and an active slot that turns unusable
+    /// hands the camera to its fallback. Polling the gunner's active weapon costs two field reads a frame and
+    /// cannot fire at the wrong moment.
+    /// </summary>
+    public class LpRoofGunView : MonoBehaviour
+    {
+        private const string Tag = "[L2A7V][roof-gun]";
+
+        private static readonly MethodInfo AttachCamSlot =
+            AccessTools.Method(typeof(CameraManager), "AttachCamToSlot", new[] { typeof(CameraSlot) });
+
+        internal WeaponSystem Weapon;
+        internal CameraSlot Sight;
+
+        private CameraSlot _return;
+        private bool _shown;
+
+        internal static void Attach(GameObject unitRoot, WeaponSystem weapon, CameraSlot sight)
+        {
+            if (unitRoot == null || weapon == null || sight == null) return;
+            LpRoofGunView view = unitRoot.GetComponent<LpRoofGunView>();
+            if (view == null) view = unitRoot.AddComponent<LpRoofGunView>();
+            view.Weapon = weapon;
+            view.Sight = sight;
+        }
+
+        private void Update()
+        {
+            PlayerInput input = PlayerInput.Instance;
+            if (input == null || Sight == null || Weapon == null) return;
+
+            GHPC.Unit unit = LpSmoke.CurrentPlayerUnit(input);
+            bool mine = unit != null && unit.gameObject == gameObject;
+            bool selected = mine && Selected(input);
+
+            if (selected)
+            {
+                if (_shown) return;
+                _shown = true;
+                if (CameraSlot.ActiveInstance == Sight) return;
+
+                _return = CameraSlot.ActiveInstance;
+                Move(input, Sight);
+                MelonLogger.Msg(Tag + " MG3 selected: view moved to its sight");
+                return;
+            }
+
+            if (!_shown) return;
+            _shown = false;
+
+            // The view can already be out of the sight when the weapon changes (the game's own availability
+            // fallback drops it to third person), so the return is driven by what happened to the view, not
+            // only by the sight still being active.
+            CameraSlot current = CameraSlot.ActiveInstance;
+            if (current != Sight && current != null) return;
+
+            CameraSlot back = _return != null && _return.IsAvailable ? _return : null;
+            Move(input, back);
+            MelonLogger.Msg(Tag + " MG3 deselected: view returned" +
+                            (back == null ? " to the exterior camera" : " to " + back.name));
+        }
+
+        private bool Selected(PlayerInput input)
+        {
+            ICrewBrain brain = input.CurrentPlayerCrewBrain;
+            if (brain == null || brain.WeaponsModule == null) return false;
+            WeaponSystemInfo active = brain.WeaponsModule.ActiveWeapon;
+            return active != null && ReferenceEquals(active.Weapon, Weapon);
+        }
+
+        /// <summary>
+        /// Attaching a linked night sight through the plain route would let the camera manager reroute it to its
+        /// day slot, so a return into one goes back through TempAttachToSlot - the route the night key itself uses.
+        /// </summary>
+        private static void Move(PlayerInput input, CameraSlot slot)
+        {
+            CameraManager manager = CameraManager.Instance;
+            if (manager == null) return;
+
+            try
+            {
+                if (slot != null && slot.IsLinkedNightSight) manager.TempAttachToSlot(slot);
+                else if (AttachCamSlot != null) AttachCamSlot.Invoke(manager, new object[] { slot });
+            }
+            catch (Exception error)
+            {
+                MelonLogger.Warning(Tag + " could not move the view: " + error.Message);
+            }
         }
     }
 }

@@ -140,6 +140,9 @@ namespace Leopard2A7V
             Add(pieces, art.Turret);
             Add(pieces, art.Gun);
             Add(pieces, art.CommanderGear);
+            // The sight head is separate art (it turns with the commander's view), and the commander's night
+            // channel now looks through it: left out of this list it sits right in front of that eyepiece.
+            Add(pieces, art.CommanderSight);
             Add(pieces, art.RoofGunYawArt);
             Add(pieces, art.RoofGunPitchArt);
             _art = pieces.ToArray();
@@ -196,6 +199,7 @@ namespace Leopard2A7V
             Add(pieces, FindDeep(_unitRoot, "L2A7V_TurretPivot"));
             Add(pieces, FindDeep(_unitRoot, "L2A7V_GunPivot"));
             Add(pieces, FindDeep(_unitRoot, "L2A7V_CupolaPivot"));
+            Add(pieces, FindDeep(_unitRoot, "L2A7V_CmdSightPivot"));
             Add(pieces, FindDeep(_unitRoot, "RoofGunMount"));
             Add(pieces, FindDeep(_unitRoot, "RoofGunReceiver"));
             _art = pieces.ToArray();

@@ -94,11 +94,10 @@ namespace Leopard2A7V
         /// Draw the crew compartment inside the hull from the War Thunder x-ray export (Interior.obj), hung on
         /// the art's own pivots with the anchors the exterior groups use.
         ///
-        /// Off on request: the after-action view shows the GAME'S OWN compartment, crew figures and the damage
-        /// states that come with them, and nothing imported is drawn over it. That is also why the interior
-        /// hider is not attached - with the imported compartment gone, hiding the donor's would leave the
-        /// report with an empty hull. The x-ray export is still parsed, because the added armour arrays are
-        /// read from it.
+        /// Off: the x-ray view shows the GAME'S OWN compartment, crew figures and the damage states that come
+        /// with them, and nothing imported is drawn over it. That is also why the interior hider is not attached
+        /// - with the imported compartment gone, hiding the donor's would leave the report with an empty hull.
+        /// The x-ray export is still parsed, because the added armour arrays are read from it.
         /// </summary>
         public static readonly bool ShowInterior = false;
 

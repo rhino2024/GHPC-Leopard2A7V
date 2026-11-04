@@ -164,7 +164,15 @@ namespace Leopard2A7V
             }
 
             LpInterior.Attach(unitRoot, result);
+            // The x-ray picture is the imported compartment now, so the donor's own compartment, crew and rack
+            // visuals are taken out of it while the report is up. Both drawn is two interiors in one vehicle.
+            if (LpConfig.ShowInterior) LpDonorInterior.Attach(unitRoot);
             LpSightView.Attach(unitRoot, result);
+            // Every reticle this vehicle owns gets a key of its own in the game's sorted post-mesh list, so two
+            // 2A7Vs in one scene can no longer knock each other's graticules out of it.
+            LpReticleOrder.Apply(unitRoot);
+            if (unitRoot.GetComponent<LpReticleWatch>() == null)
+                unitRoot.AddComponent<LpReticleWatch>();
             LpThermal.Apply(unitRoot);
             LpBaseRig.Apply(unit);
             LpDonorArt.Request(unitRoot);

@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net472</TargetFramework>
@@ -7,9 +7,9 @@
     <RootNamespace>Leopard2A7V</RootNamespace>
     <!-- Stamped onto the DLL itself. Without this the assembly said 1.0.0.0 forever, so nothing reading the
          file could tell which build it had. -->
-    <Version>0.2.2</Version>
-    <FileVersion>0.2.2</FileVersion>
-    <AssemblyVersion>0.2.2</AssemblyVersion>
+    <Version>0.3.0</Version>
+    <FileVersion>0.3.0</FileVersion>
+    <AssemblyVersion>0.3.0</AssemblyVersion>
     <Product>Leopard 2A7V</Product>
     <Company>rhino2024</Company>
     <Description>Leopard 2A7V tank model swap for Gunner, HEAT, PC!</Description>
@@ -75,6 +75,10 @@
     </Reference>
     <Reference Include="UnityEngine.TextRenderingModule">
       <HintPath>$(GameDir)\GHPC_Data\Managed\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.ScreenCaptureModule">
+      <HintPath>$(GameDir)\GHPC_Data\Managed\UnityEngine.ScreenCaptureModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <EmbeddedResource Include="Assets\armor.bin">
