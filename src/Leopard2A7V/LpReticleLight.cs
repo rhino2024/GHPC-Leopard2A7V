@@ -1,3 +1,4 @@
+using GHPC.Camera;
 using GHPC.Equipment.Optics;
 using Reticle;
 using UnityEngine;
@@ -38,6 +39,19 @@ namespace Leopard2A7V
                 return;
             }
 
+            // The plate is one of the slot's own items: the game switches it off when it leaves the sight and
+            // back on when it enters, and a re-entry that goes through a different path - after the report,
+            // after a vehicle switch, after a channel change - can leave it off with the sight still up, which
+            // reads as "the graticule sometimes disappears". Re-assert it while this sight is the active slot
+            // and the channel is the optical one; on thermal the game swaps in its own plate and ours must stay
+            // down.
+            CameraSlot slot = CameraSlot.ActiveInstance;
+            if (slot != null && slot.VisionType != NightVisionType.Thermal)
+            {
+                UsableOptic optic = GetComponentInParent<UsableOptic>();
+                if (optic != null && optic.slot == slot) Show();
+            }
+
             // PlayerControl is marked obsolete by the game but is still the component that holds the key.
             // The static property is the same value the digital reticles' tint reads.
 #pragma warning disable CS0612
@@ -58,6 +72,14 @@ namespace Leopard2A7V
             _mesh.GetLight(_type, out float value);
             if (float.IsNaN(value)) return;
             _mesh.SetLight(_type, on ? 1f : 0f);
+        }
+
+        /// <summary>Puts the plate back on screen when the sight is up and the plate is switched off.</summary>
+        private void Show()
+        {
+            if (!_mesh.gameObject.activeSelf) _mesh.gameObject.SetActive(true);
+            Renderer renderer = _mesh.GetComponent<Renderer>();
+            if (renderer != null && !renderer.enabled) renderer.enabled = true;
         }
     }
 }

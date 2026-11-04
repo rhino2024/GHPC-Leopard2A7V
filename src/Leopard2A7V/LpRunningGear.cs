@@ -56,9 +56,47 @@ namespace Leopard2A7V
             }
         }
 
-        public static void Attach(Transform hullPivot, Transform unitRoot)
+        /// <summary>
+        /// Binds the gear as soon as the donor's wheel bones exist, and says whether it has.
+        ///
+        /// A unit spawned from the template starts without them: the template is cloned from the donor prefab,
+        /// which no game system has ever run, and the skinned running gear that carries those bones is built
+        /// by the game's own art pass on a live unit. The conversion therefore fell back to a static mesh and
+        /// the vehicle rolled on nothing until this ran. Called from the per-unit watcher, so the first tick
+        /// after the art pass arrives binds the real gear and takes the stand-in away.
+        /// </summary>
+        internal static bool Ensure(Transform unitRoot)
         {
-            var stillNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (LpConfig.UseDonorRunningGear) return true;   // the donor's own gear is the gear
+            if (unitRoot == null) return true;
+            Transform hull = FindDeep(unitRoot, "L2A7V_HullPivot");
+            if (hull == null) return false;
+            if (FindDeep(hull, "L2A7V_wheel_l_01") != null) return true;      // already riding its bones
+
+            List<Transform> bones = FindBones(unitRoot);
+            if (bones == null || bones.Count == 0) return false;              // the art pass has not arrived yet
+
+            Transform stand = FindDeep(hull, "L2A7V_RunningGearStatic");
+            if (stand != null) UnityEngine.Object.Destroy(stand.gameObject);
+            MelonLogger.Msg(Tag + " the donor's wheel bones have arrived; binding the imported gear to them");
+            Attach(hull, unitRoot);
+            return true;
+        }
+
+        private static Transform FindDeep(Transform root, string name)
+        {
+            if (root == null) return null;
+            if (root.name == name) return root;
+            foreach (Transform child in root)
+            {
+                Transform found = FindDeep(child, name);
+                if (found != null) return found;
+            }
+            return null;
+        }
+
+        public static void Attach(Transform hullPivot, Transform unitRoot)
+        {            var stillNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             Dictionary<string, Part> parts = CollectParts();
 
             List<Transform> bones = FindBones(unitRoot);
@@ -118,10 +156,14 @@ namespace Leopard2A7V
                 // part about its own axle. Resetting the world rotation afterwards keeps our art's own stance.
                 Transform holder = LpVisual.MakePivot(bone, "L2A7V_" + part.Name, Vector3.zero);
                 holder.rotation = hullPivot.rotation;
-                LpVisual.AttachMesh(holder, "L2A7V_" + part.Name,
+                MeshRenderer wheel = LpVisual.AttachMesh(holder, "L2A7V_" + part.Name,
                     LpAssets.BuildWhere(p => p.Group == LpGroup.RunningGear &&
                                              string.Equals(p.ObjectName, part.Name, StringComparison.OrdinalIgnoreCase),
                         "L2A7V_" + part.Name, part.Box.center));
+                // A curved wheel that receives the shadow of the hull and the track right above it picks up the
+                // vehicle shader's shadow bias as blocky patches - the mosaic that shows up on the running gear
+                // from some angles. Nothing here is big enough for its own shadow to matter, so it only casts.
+                if (wheel != null) wheel.receiveShadows = false;
                 bound++;
 
                 MelonLogger.Msg(Tag + $" {part.Name} -> {PathOf(bone)} offset {distance * 1000:0} mm");

@@ -30,6 +30,28 @@ namespace Leopard2A7V
         /// <summary>Plates a composite array is split into, so a round is stopped layer by layer.</summary>
         private const int LayeredArrayCount = 3;
 
+        /// <summary>
+        /// How far apart those layers may sit. The stack is built by copying the module's own shell and
+        /// moving the copies, so an uncapped spacing of one third of a 2.5 m envelope fans the outer layers
+        /// most of a metre out of the vehicle - which is how a flank ended up meeting armour that was not
+        /// there. Capped, the three copies stay within 15 cm of the surface the export drew.
+        /// </summary>
+        private const float MaxLayerSpacing = 0.15f;
+
+        /// <summary>
+        /// How far off the module's own axis a face may still count as a ballistic face of it - the cosine of
+        /// 60 degrees. Steeper than that the triangle is a rim, and goes in as structure instead.
+        /// </summary>
+        private const float StrikingFaceCosine = 0.5f;
+
+        /// <summary>
+        /// What a composite module's rim is worth. A package's edges are its steel casing, not its array: the
+        /// 2A7V's own document set does not quote an edge figure, and 40 mm is the number this table already
+        /// uses for structural plate of that thickness. Only the rim is affected; the ballistic faces keep
+        /// their published values.
+        /// </summary>
+        private const float EdgeRha = 40f;
+
         private static int _logged;
         private static readonly System.Collections.Generic.List<Bounds> OurBounds =
             new System.Collections.Generic.List<Bounds>();
@@ -44,6 +66,23 @@ namespace Leopard2A7V
             internal Mesh Mesh;
         }
 
+        /// <summary>
+        /// The baked modules and their meshes, for the additive armour pass.
+        ///
+        /// This class no longer builds colliders of its own - the overlay in LpArmorOverlay does that, one
+        /// convex collider per plate - but it still owns the one place the x-ray geometry is decoded and
+        /// re-framed, so the overlay reads it from here rather than parsing the file a second time.
+        /// </summary>
+        internal static bool TryGetGroups(List<KeyValuePair<string, Mesh>> into)
+        {
+            List<Group> groups = Load();
+            if (groups == null) return false;
+            foreach (Group group in groups)
+                if (group != null && group.Mesh != null)
+                    into.Add(new KeyValuePair<string, Mesh>(group.Name, group.Mesh));
+            return into.Count > 0;
+        }
+
         internal static string ModFolder
         {
             get
@@ -53,18 +92,19 @@ namespace Leopard2A7V
             }
         }
 
-        public static bool Build(GameObject unitRoot)
+        public static bool Build(GameObject unitRoot, LpVisual.Assembly art = null)
         {
             if (unitRoot == null) return false;
             List<Group> groups = Load();
             if (groups == null || groups.Count == 0) return false;
 
-            // The pieces ride the same visual bones the imported art rides, and are placed in the same frame
-            // the art is placed in. Parenting them to the collider roots put them in world orientation near the
-            // world origin instead of under the tank, which is why a hit anywhere met no armour.
-            Transform hull = FindBone(unitRoot, "hull") ?? FindColliderRoot(unitRoot, "hull");
-            Transform turret = FindBone(unitRoot, "turret") ?? FindColliderRoot(unitRoot, "turret");
-            Transform gun = FindBone(unitRoot, "Rh-120_L/44") ?? FindBone(unitRoot, "mantlet");
+            // The pieces hang off the same pivots the imported art hangs off, at local zero, in the frame the
+            // art meshes are authored in. Placing them under the rig bones instead put them in a frame rotated
+            // ninety degrees against the model, which is why a hit at the side registered before the round had
+            // reached the hull.
+            Transform hull = art != null ? art.Hull : FindBone(unitRoot, "hull");
+            Transform turret = art != null ? art.Turret : FindBone(unitRoot, "turret");
+            Transform gun = art != null ? art.Gun : FindBone(unitRoot, "Rh-120_L/44");
             if (hull == null)
             {
                 MelonLogger.Warning(Tag + " no hull bone on " + unitRoot.name + "; the donor armour stays");
@@ -77,8 +117,8 @@ namespace Leopard2A7V
             Unit unit = LpFind.Unit(unitRoot);
             Transform frame = unit != null ? unit.transform : unitRoot.transform;
             Vector3 hullLocal = hull.InverseTransformPoint(frame.TransformPoint(LpConfig.Offset));
-            // The turret and gun geometry has the ring and trunnion baked out of it, in the bundle and in the
-            // binary fallback alike, so those pieces go in at local zero - no anchor maths at run time.
+            // Cache() puts the ring into the turret meshes on the way in, in this same frame, so those pieces
+            // go in at local zero - no anchor maths at run time.
             Vector3 turretLocal = Vector3.zero;
             Vector3 gunLocal = Vector3.zero;
             MelonLogger.Msg(Tag + " anchors: hull " + hullLocal.ToString("0.00") + " turret " +
@@ -134,6 +174,7 @@ namespace Leopard2A7V
             }
 
             int retired = built > 0 ? RetireDonorArmour(unitRoot) : 0;
+            if (art != null) CheckAgainstArt(art);
             MelonLogger.Msg(Tag + " built " + built + " piece(s) from the baked armour" +
                             (noZone > 0 ? ", " + noZone + " group(s) had no zone entry" : string.Empty) +
                             (retired > 0 ? ", retired " + retired + " donor plate(s)" : string.Empty));
@@ -149,16 +190,55 @@ namespace Leopard2A7V
         }
 
         /// <summary>
-        /// Switches the donor's own armour off once this mod's plates are in place.
+        /// Compares every plate with the visible model and names the ones that stick out of it.
+        ///
+        /// This is the check that settles "is the armour in the right place" without a screenshot: anything
+        /// outside the hull or turret bounds by more than a few centimetres is misplaced, and anything that is
+        /// inside the art but still triggers early is a collider problem rather than a transform one.
+        /// </summary>
+        private static void CheckAgainstArt(LpVisual.Assembly art)
+        {
+            Bounds hull = ArtBounds(art.Hull);
+            Bounds turret = ArtBounds(art.Turret);
+            int outside = 0;
+            foreach (Bounds piece in OurBounds)
+            {
+                bool inHull = hull.size != Vector3.zero && hull.Intersects(piece);
+                bool inTurret = turret.size != Vector3.zero && turret.Intersects(piece);
+                if (inHull || inTurret) continue;
+                outside++;
+                MelonLogger.Warning(Tag + " plate outside the model: " + piece.center.ToString("0.00"));
+            }
+            MelonLogger.Msg(Tag + " plates outside the visible model: " + outside + " of " + OurBounds.Count);
+        }
+
+        private static Bounds ArtBounds(Transform pivot)
+        {
+            if (pivot == null) return new Bounds(Vector3.zero, Vector3.zero);
+            bool any = false;
+            Bounds bounds = new Bounds(pivot.position, Vector3.zero);
+            foreach (Renderer renderer in pivot.GetComponentsInChildren<Renderer>(true))
+            {
+                if (renderer == null) continue;
+                if (!any) { bounds = renderer.bounds; any = true; }
+                else bounds.Encapsulate(renderer.bounds);
+            }
+            return any ? bounds : new Bounds(pivot.position, Vector3.zero);
+        }
+
+        /// <summary>
+        /// Switches the donor's own armour off where this mod's plates replace it.
         ///
         /// Without this the vehicle wears both sets: the donor's authored plates were never removed, so a round
         /// had to beat the donor's armour and then the 2A7V's, which is twice the protection the x-ray figures
-        /// describe. The T-90M mod does the same thing from a table ("off|Upper Front Plate"); here the rule is
-        /// simply everything that is not one of ours.
+        /// describe. The T-90M mod does the same thing from a table ("off|Upper Front Plate"); here a piece goes
+        /// when the data table names it, when its name says it is an array, or when one of our plates covers it -
+        /// and never when it is one of the hit zones this mod deliberately leaves the donor's.
         /// </summary>
         private static int RetireDonorArmour(GameObject unitRoot)
         {
             int retired = 0, kept = 0;
+            var keptNames = new System.Collections.Generic.List<string>();
             foreach (UniformArmor plate in unitRoot.GetComponentsInChildren<UniformArmor>(true))
             {
                 if (plate == null) continue;
@@ -168,7 +248,13 @@ namespace Leopard2A7V
                 // simplest, but it also stripped the parts the x-ray export does not cover - the mantlet, the
                 // hull floor, the skirts - and a hit there then met no armour at all.
                 bool named = LpData.IsVanillaOff(plate.name);
-                if (!named && !Covered(plate)) { kept++; continue; }
+                bool isArray = plate.name.IndexOf("array", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (!named && !isArray && (IsProtected(plate.name, plate.ArmorType) || !Covered(plate)))
+                {
+                    kept++;
+                    keptNames.Add(plate.name + "|" + plate.transform.position.ToString("0.00"));
+                    continue;
+                }
 
                 foreach (Collider collider in plate.GetComponentsInChildren<Collider>(true))
                     if (collider != null) collider.enabled = false;
@@ -180,6 +266,7 @@ namespace Leopard2A7V
                 if (measured == null) continue;
                 Collider collider = measured.GetComponentInChildren<Collider>(true);
                 if (collider == null) continue;
+                if (IsProtected(measured.name, measured.ArmorType)) continue;
                 bool named = LpData.IsVanillaOff(measured.name);
                 bool ours = false;
                 foreach (Bounds bounds in OurBounds)
@@ -193,9 +280,50 @@ namespace Leopard2A7V
                 measured.enabled = false;
                 retired++;
             }
-            if (kept > 0)
+            if (keptNames.Count > 0)
+            {
                 MelonLogger.Msg(Tag + " kept " + kept + " donor plate(s) outside the x-ray coverage");
+                DumpKept(keptNames);
+            }
             return retired;
+        }
+
+        /// <summary>
+        /// True for the donor pieces this mod must leave answering hits whatever the coverage test says.
+        ///
+        /// The crew's anatomy, the track hit zones, the running gear and the fuel cells all sit inside the
+        /// volume the composites occupy, and the 1.2 m the coverage test grows them by reaches every one of
+        /// them. They are not armour this mod replaces - the plan is explicit that the track zones stay the
+        /// donor's - and retiring them would leave the crew and the tracks immune and the fuel inert.
+        /// </summary>
+        private static bool IsProtected(string name, ArmorCodexScriptable codex)
+        {
+            string type = codex != null && codex.name != null ? codex.name.ToLowerInvariant() : string.Empty;
+            if (type.Contains("human") || type.Contains("flesh") || type.Contains("bone") ||
+                type.Contains("track"))
+                return true;
+
+            string plate = name == null ? string.Empty : name.ToLowerInvariant();
+            return plate.Contains("track") || plate.Contains("wheel") || plate.Contains("suspension") ||
+                   plate.Contains("crew") || plate.Contains("fuel") || plate.Contains("human");
+        }
+
+        /// <summary>
+        /// Writes the donor plates that were left active, so the list can be reviewed instead of guessed at.
+        /// Each line is "name|world position"; add the names that should go to L2A7V_data.txt as vanilla_off.
+        /// </summary>
+        private static void DumpKept(System.Collections.Generic.List<string> names)
+        {
+            try
+            {
+                string path = System.IO.Path.Combine(ModFolder, "donor_plates.txt");
+                System.IO.File.WriteAllLines(path, names);
+                MelonLogger.Msg(Tag + " wrote " + names.Count + " kept plate name(s) to donor_plates.txt");
+            }
+            catch (System.Exception error)
+            {
+                MelonLogger.Warning(Tag + " could not write donor_plates.txt: " + error.Message);
+            }
         }
 
         /// <summary>True when one of this mod's plates occupies the same space as the donor plate.</summary>
@@ -278,7 +406,7 @@ namespace Leopard2A7V
         /// so the type has to follow the part, not the station. The order is: an explicit line in the data
         /// table, then the part's own kind, then the station, then anything.
         /// </summary>
-        private static ArmorCodexScriptable CodexFor(string groupName, Vector3 centre)
+        private static ArmorCodexScriptable CodexFor(string groupName, Vector3 facing)
         {
             string name = groupName.ToLowerInvariant();
 
@@ -291,7 +419,8 @@ namespace Leopard2A7V
             if (name.Contains("turret"))
             {
                 // A turret array is a front array when it faces forward, a side array when it faces sideways.
-                bool front = Mathf.Abs(centre.x) >= Mathf.Abs(centre.z);
+                // Facing, not position: a cheek sits well off the centreline but still faces the front.
+                bool front = Mathf.Abs(facing.z) >= Mathf.Abs(facing.x);
                 ArmorCodexScriptable typed = Match(front ? "turret front array B tech" : "turret side array B tech");
                 if (typed != null) return typed;
             }
@@ -359,30 +488,75 @@ namespace Leopard2A7V
             if (bone == null || group.Mesh == null) return false;
             Mesh mesh = group.Mesh;
 
-            // The stack runs along the plate's own normal so the layers sit inside the real array's thickness.
-            Vector3 normal = AverageNormal(mesh);
+            // The stack runs along the plate's own normal so the layers sit inside the real array's thickness,
+            // and never further apart than MaxLayerSpacing so three copies of a shell stay on the vehicle.
+            Vector3 normal = PlateAxis(mesh);
             float thickness = ExtentAlong(mesh, normal);
-            float spacing = layers > 1 ? thickness / layers : 0f;
+            float spacing = layers > 1 ? Mathf.Min(thickness / layers, MaxLayerSpacing) : 0f;
+            if (codex == null) codex = CodexFor(group.Name, normal);
+
+            Mesh faces = null, rim = null;
+            if (layers > 1 && ke > EdgeRha * 1.5f)
+            {
+                faces = Select(mesh, normal, true);
+                rim = Select(mesh, normal, false);
+            }
+            Mesh body = faces != null ? faces : mesh;
 
             for (int layer = 0; layer < layers; layer++)
             {
                 float offset = layers > 1 ? (layer - (layers - 1) * 0.5f) * spacing : 0f;
-                BuildLayer(bone, anchor, group, mesh, ke / layers, ce / layers, codex,
+                BuildLayer(bone, anchor, group, body, ke / layers, ce / layers, codex,
                            layers > 1 ? zoneName + " layer " + (layer + 1) + "/" + layers : zoneName,
-                           normal * offset);
+                           normal * offset, normal);
             }
+
+            // The rim goes in once, as the steel it is. It is what a flank shot meets first, and leaving it at
+            // the array's frontal figure is what made the turret's sides as strong as its face.
+            if (rim != null)
+                BuildLayer(bone, anchor, group, rim, EdgeRha, EdgeRha, codex, zoneName + " rim",
+                           Vector3.zero, normal);
             return true;
         }
 
-        private static Transform Rig(Transform from)
+        /// <summary>
+        /// A module's triangles split by whether their face is perpendicular to the module's own axis or not.
+        ///
+        /// The layered copies get the perpendicular ones - a composite package is ballistic through its two
+        /// big faces and nothing else - and the remainder becomes the rim, one piece of structural steel. This
+        /// is the difference between "the cheek is 640 from the front" and "the cheek is 640 from every side",
+        /// which is how a flank shot came to out-stop an 800 mm dart.
+        /// </summary>
+        private static Mesh Select(Mesh source, Vector3 axis, bool facing)
         {
-            foreach (Transform node in from.GetComponentsInParent<Transform>(true))
-                if (node != null && node.name.Equals("leo2_rig", StringComparison.OrdinalIgnoreCase)) return node;
-            return from.root;
+            Vector3[] vertices = source.vertices;
+            int[] triangles = source.triangles;
+            var kept = new List<int>(triangles.Length);
+            for (int i = 0; i + 2 < triangles.Length; i += 3)
+            {
+                Vector3 a = vertices[triangles[i]];
+                Vector3 b = vertices[triangles[i + 1]];
+                Vector3 c = vertices[triangles[i + 2]];
+                Vector3 cross = Vector3.Cross(b - a, c - a);
+                if (cross.sqrMagnitude < 1e-12f) continue;
+                bool along = Mathf.Abs(Vector3.Dot(cross.normalized, axis)) >= StrikingFaceCosine;
+                if (along != facing) continue;
+                kept.Add(triangles[i]);
+                kept.Add(triangles[i + 1]);
+                kept.Add(triangles[i + 2]);
+            }
+            if (kept.Count == 0) return null;
+
+            var mesh = new Mesh { name = source.name + (facing ? " face" : " rim") };
+            if (vertices.Length > 65000) mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+            mesh.vertices = vertices;
+            mesh.triangles = kept.ToArray();
+            mesh.RecalculateBounds();
+            return mesh;
         }
 
         private static void BuildLayer(Transform bone, Vector3 anchor, Group group, Mesh mesh, float ke, float ce, ArmorCodexScriptable codex,
-            string zoneName, Vector3 offset)
+            string zoneName, Vector3 offset, Vector3 facing)
         {
             var go = new GameObject(Marker + " " + group.Name + " " + zoneName);
             go.transform.SetParent(bone, false);
@@ -396,12 +570,14 @@ namespace Leopard2A7V
             go.layer = 8;
             go.tag = "Penetrable";
 
-            Transform space = Rig(bone);
             var collider = go.AddComponent<MeshCollider>();
             collider.sharedMesh = mesh;
             collider.convex = false;
+            // TransformVector through a half-turn reports negative components, and a Bounds built from those
+            // has its extents run backwards - both Intersects tests below then answer false, which silently
+            // stopped the donor plates near our own from being retired.
             OurBounds.Add(new Bounds(go.transform.TransformPoint(mesh.bounds.center),
-                                     go.transform.TransformVector(mesh.bounds.size)));
+                                     Abs(go.transform.TransformVector(mesh.bounds.size))));
 
             float scale = LpConfig.ArmorScale;
             var armor = go.AddComponent<UniformArmor>();
@@ -415,7 +591,11 @@ namespace Leopard2A7V
             armor.AngleMatters = true;
             armor.DetonatedObjects = Array.Empty<GameObject>();
             armor.UndetonatedObjects = Array.Empty<GameObject>();
-            if (codex == null) codex = CodexFor(group.Name, mesh.bounds.center);
+            armor.Punctured += pierced =>
+                MelonLogger.Msg(Tag + " PIERCED: '" + zoneName + "' (" + group.Name + ") at " +
+                                go.transform.position.ToString("0.0"));
+            MelonLogger.Msg(Tag + " piece '" + group.Name + "' -> codex '" +
+                            (codex == null ? "none" : codex.name) + "'");
             armor.CenterPoint = go.transform;
             armor.SetName(zoneName);
             if (codex != null) SetPrivate(armor, "_armorType", codex);
@@ -425,22 +605,15 @@ namespace Leopard2A7V
             else MelonLogger.Warning(Tag + " piece '" + group.Name + "' has no Unit; hits may not be attributed");
 
             // Where the piece actually landed, in world space: if the mesh and the transform disagree the
-            // collider can sit metres away from the tank, which reads as "no armour at all".
+            // collider can sit metres away from the tank, which reads as "no armour at all". The facing is
+            // logged with it because a plate whose normal points the wrong way is invisible to a shot.
             if (_logged < 6)
             {
                 _logged++;
-                MeshCollider mc = go.GetComponent<MeshCollider>();
-                Bounds world = mc != null && mc.sharedMesh != null
-                    ? new Bounds(go.transform.TransformPoint(mc.sharedMesh.bounds.center),
-                                 go.transform.TransformVector(mc.sharedMesh.bounds.size))
-                    : new Bounds(go.transform.position, Vector3.zero);
-                Vector3 expected = mesh.bounds.center;
-                float error = (space.InverseTransformPoint(world.center) - expected).magnitude;
                 MelonLogger.Msg(Tag + " piece '" + group.Name + "' centre " +
-                                world.center.ToString("0.00") + " size " + world.size.ToString("0.00") +
-                                " layer " + go.layer + " unit " + (armor.Unit != null) +
-                                " | rig-space error " + error.ToString("0.00") + " m vs x-ray " +
-                                expected.ToString("0.00"));
+                                go.transform.position.ToString("0.00") + " size " +
+                                mesh.bounds.size.ToString("0.00") + " facing " + facing.ToString("0.00") +
+                                " layer " + go.layer + " unit " + (armor.Unit != null));
             }
 
             AarVisual aar = go.AddComponent<AarVisual>();
@@ -454,20 +627,68 @@ namespace Leopard2A7V
             }
         }
 
-        /// <summary>Area-weighted mean normal of a mesh, which is the direction its plates face.</summary>
-        private static Vector3 AverageNormal(Mesh mesh)
+        /// <summary>
+        /// The axis a module's plates face, from the second moment of its own face normals.
+        ///
+        /// The modules in the x-ray export are closed shells, so simply summing their area-weighted face
+        /// normals cancels to nothing and the old code fell back to +Y - which stacked every array's three
+        /// layers vertically, one above the turret roof and one below the hull floor, instead of across the
+        /// array's thickness. The second moment has no such cancellation: a module's two big faces dominate
+        /// it, so the eigenvector of its largest eigenvalue is the through-thickness direction. Power
+        /// iteration finds that vector in a handful of passes and needs no matrix decomposition.
+        /// </summary>
+        private static Vector3 PlateAxis(Mesh mesh)
         {
             Vector3[] vertices = mesh.vertices;
             int[] triangles = mesh.triangles;
-            Vector3 sum = Vector3.zero;
+            var moment = new double[3, 3];
             for (int i = 0; i + 2 < triangles.Length; i += 3)
             {
                 Vector3 a = vertices[triangles[i]];
                 Vector3 b = vertices[triangles[i + 1]];
                 Vector3 c = vertices[triangles[i + 2]];
-                sum += Vector3.Cross(b - a, c - a);
+                Vector3 cross = Vector3.Cross(b - a, c - a);
+                float weight = cross.magnitude;
+                if (weight < 1e-9f) continue;
+                Vector3 n = cross / weight;
+                moment[0, 0] += weight * n.x * n.x;
+                moment[0, 1] += weight * n.x * n.y;
+                moment[0, 2] += weight * n.x * n.z;
+                moment[1, 1] += weight * n.y * n.y;
+                moment[1, 2] += weight * n.y * n.z;
+                moment[2, 2] += weight * n.z * n.z;
             }
-            return sum.sqrMagnitude > 0.000001f ? sum.normalized : Vector3.up;
+            moment[1, 0] = moment[0, 1];
+            moment[2, 0] = moment[0, 2];
+            moment[2, 1] = moment[1, 2];
+
+            // Start on the strongest diagonal term, which is already close to the answer for a boxy module.
+            int start = 0;
+            if (moment[1, 1] > moment[start, start]) start = 1;
+            if (moment[2, 2] > moment[start, start]) start = 2;
+            var vector = new double[3];
+            vector[start] = 1.0;
+
+            for (int pass = 0; pass < 64; pass++)
+            {
+                var next = new double[3];
+                for (int row = 0; row < 3; row++)
+                    next[row] = moment[row, 0] * vector[0] + moment[row, 1] * vector[1] + moment[row, 2] * vector[2];
+                double length = Math.Sqrt(next[0] * next[0] + next[1] * next[1] + next[2] * next[2]);
+                if (length < 1e-12) break;
+                for (int row = 0; row < 3; row++) vector[row] = next[row] / length;
+            }
+
+            var axis = new Vector3((float)vector[0], (float)vector[1], (float)vector[2]);
+            if (axis.sqrMagnitude < 0.000001f) return Vector3.up;
+            // A sign is meaningless for a plate; pointing it away from the vehicle's own centre makes the
+            // layer offsets fall inward, where the array actually is.
+            return axis.normalized;
+        }
+
+        private static Vector3 Abs(Vector3 value)
+        {
+            return new Vector3(Mathf.Abs(value.x), Mathf.Abs(value.y), Mathf.Abs(value.z));
         }
 
         /// <summary>How thick the piece is along that normal - the stacking distance the layers share.</summary>
@@ -483,6 +704,75 @@ namespace Leopard2A7V
                 if (d > max) max = d;
             }
             return Mathf.Max(0.02f, max - min);
+        }
+
+        /// <summary>
+        /// Puts a baked mesh into the frame the art is built in, once per session.
+        ///
+        /// The export the armour was cut from is +X forward with +Z to starboard; a GHPC unit is +X starboard
+        /// with +Z forward, and ObjModel and LpInterior make exactly that swap when they read their OBJ files,
+        /// which is why the visible model has always agreed with the colliders the game authored. The bake kept
+        /// the export's axes, so every plate went in ninety degrees off: the glacis sat three metres off the
+        /// side of the hull and the 800 mm cheek arrays lay across the turret's flanks, which is why a flank
+        /// shot met the front array while the front met a module from the rear of the turret.
+        ///
+        /// Swapping two axes is a mirror, so the winding is reversed as well or every face points into its
+        /// module and a physics query from outside passes straight through it.
+        ///
+        /// The turret ring was baked out on the export's axes too. Once x and z trade places that subtraction
+        /// lands on the wrong axis, so a turret piece takes it back off x and re-applies it on z.
+        ///
+        /// A packed mesh is usually readable, but not always, and its vertices cannot be touched when it is
+        /// not; that case keeps the export's axes and says so, because losing the armour altogether is worse
+        /// than wearing it at the wrong angle.
+        /// </summary>
+        private static Mesh Cache(string name, Mesh source)
+        {
+            Mesh cached;
+            if (_meshes.TryGetValue(name, out cached) && cached != null) return cached;
+            if (source == null) return null;
+
+            if (!source.isReadable)
+            {
+                MelonLogger.Warning(Tag + " the bundle mesh '" + name + "' is not readable, so it keeps the " +
+                                    "export's axes and its plate sits ninety degrees off");
+                _meshes[name] = source;
+                return source;
+            }
+
+            return Cache(name, source.vertices, source.triangles);
+        }
+
+        private static Mesh Cache(string name, Vector3[] source, int[] triangles)
+        {
+            Mesh cached;
+            if (_meshes.TryGetValue(name, out cached) && cached != null) return cached;
+
+            bool turret = name.IndexOf("turret", StringComparison.OrdinalIgnoreCase) >= 0;
+            float ring = turret ? LpConfig.TurretAxis.z : 0f;
+
+            var vertices = new Vector3[source.Length];
+            for (int i = 0; i < source.Length; i++)
+            {
+                Vector3 p = source[i];
+                vertices[i] = new Vector3(p.z + ring, p.y, p.x - ring);
+            }
+
+            var flipped = new int[triangles.Length];
+            for (int i = 0; i + 2 < triangles.Length; i += 3)
+            {
+                flipped[i] = triangles[i];
+                flipped[i + 1] = triangles[i + 2];
+                flipped[i + 2] = triangles[i + 1];
+            }
+
+            var mesh = new Mesh { name = name };
+            if (vertices.Length > 65000) mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+            mesh.vertices = vertices;
+            mesh.triangles = flipped;
+            mesh.RecalculateBounds();
+            _meshes[name] = mesh;
+            return mesh;
         }
 
         /// <summary>Reads the baked armour, once per session.</summary>
@@ -536,17 +826,7 @@ namespace Leopard2A7V
                         int indexCount = reader.ReadInt32();
                         var triangles = new int[indexCount];
                         for (int i = 0; i < indexCount; i++) triangles[i] = reader.ReadInt32();
-                        if (!_meshes.TryGetValue(name, out Mesh mesh) || mesh == null)
-                        {
-                            mesh = new Mesh { name = name };
-                            if (vertices.Length > 65000)
-                                mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
-                            mesh.vertices = vertices;
-                            mesh.triangles = triangles;
-                            mesh.RecalculateBounds();
-                            _meshes[name] = mesh;
-                        }
-                        _groups.Add(new Group { Name = name, Mesh = mesh });
+                        _groups.Add(new Group { Name = name, Mesh = Cache(name, vertices, triangles) });
                     }
                 }
             }
@@ -557,7 +837,8 @@ namespace Leopard2A7V
                 return _groups;
             }
 
-            MelonLogger.Msg(Tag + " loaded " + _groups.Count + " armour group(s) from " + FileName);
+            MelonLogger.Msg(Tag + " loaded " + _groups.Count + " armour group(s) from " + FileName +
+                            ", re-framed into the unit's axes");
             return _groups;
         }
 
@@ -598,7 +879,7 @@ namespace Leopard2A7V
             {
                 MeshFilter filter = child.GetComponent<MeshFilter>();
                 if (filter == null || filter.sharedMesh == null) continue;
-                _groups.Add(new Group { Name = child.name, Mesh = filter.sharedMesh });
+                _groups.Add(new Group { Name = child.name, Mesh = Cache(child.name, filter.sharedMesh) });
                 count++;
             }
 
@@ -608,7 +889,8 @@ namespace Leopard2A7V
                 return false;
             }
 
-            MelonLogger.Msg(Tag + " loaded " + count + " armour mesh(es) from " + BundleFile);
+            MelonLogger.Msg(Tag + " loaded " + count + " armour mesh(es) from " + BundleFile +
+                            ", re-framed into the unit's axes");
             return true;
         }
 

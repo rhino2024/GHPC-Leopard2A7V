@@ -54,16 +54,35 @@ namespace Leopard2A7V
         public const string SourceUnitKey = "LEO2A3";
 
         /// <summary>
+        /// Spawn every vehicle by converting the game's own live LEO2A3 instead of instantiating a converted
+        /// prefab clone.
+        ///
+        /// This is the L2A7HU mod's arrangement, and it is on for the reason it works there: the conversion
+        /// needs things only a live unit has. Its armour colliders tell the added plates which layer the
+        /// projectile raycast actually looks at, and its crew, compartments and module hitzones are already in
+        /// the tree while the conversion runs. A prefab clone has none of that - it has never run Awake or
+        /// OnSpawn - so the same pass had to guess the layer and leave the damage model to be filled in later.
+        /// </summary>
+        public static readonly bool UseTemplate = false;
+
+        /// <summary>
         /// Off: only this mod's own entry is restyled and the stock LEO2A3s stay as the game made them, so a
         /// scenario can field both.
         /// </summary>
         public static readonly bool ConvertSourceUnit = false;
 
         /// <summary>
-        /// Off builds this model's own road wheels, idlers and sprockets on the donor's suspension bones, which
-        /// is the geometry the exported hull actually has.
+        /// On keeps the donor's skinned road wheels, idlers and sprockets instead of building this model's own
+        /// gear on the donor's suspension bones.
+        ///
+        /// The model's own wheels were the better geometry - they are the 2A7V's, drawn to the hull that is
+        /// drawn around them - but their unwrap is unusable at this texture budget: each wheel face is a
+        /// circular island a few dozen texels across in the 2K body atlas, so every triangle lands on one or
+        /// two texels of the albedo and normal map and the wheel renders as a checker of flat facets. That is
+        /// the "mosaic". The donor's wheels are properly unwrapped, animate on the same bones, and the tracks
+        /// beside them are the donor's already (UseDonorTrackArt), so the running gear now comes from one set.
         /// </summary>
-        public static readonly bool UseDonorRunningGear = false;
+        public static readonly bool UseDonorRunningGear = true;
 
         /// <summary>
         /// On keeps the donor's track loops. The 2A7V's own exported loop is authored too short to reach
@@ -72,12 +91,16 @@ namespace Leopard2A7V
         public static readonly bool UseDonorTrackArt = true;
 
         /// <summary>
-        /// Draw the crew compartment inside the hull. The imported piece is the War Thunder x-ray interior
-        /// (Interior.obj), parsed by LpInterior and hung on the art's own pivots with the same anchors the
-        /// exterior groups use, so the engine sits behind the firewall and the carousel under the turret floor
-        /// without a second offset. It follows the game's own x-ray view.
+        /// Draw the crew compartment inside the hull from the War Thunder x-ray export (Interior.obj), hung on
+        /// the art's own pivots with the anchors the exterior groups use.
+        ///
+        /// Off on request: the after-action view shows the GAME'S OWN compartment, crew figures and the damage
+        /// states that come with them, and nothing imported is drawn over it. That is also why the interior
+        /// hider is not attached - with the imported compartment gone, hiding the donor's would leave the
+        /// report with an empty hull. The x-ray export is still parsed, because the added armour arrays are
+        /// read from it.
         /// </summary>
-        public static readonly bool ShowInterior = true;
+        public static readonly bool ShowInterior = false;
 
         /// <summary>
         /// Set the protection from this model's geometry rather than the LEO2A3's: composite depths come from
@@ -85,6 +108,19 @@ namespace Leopard2A7V
         /// every layer at load.
         /// </summary>
         public static readonly bool WtArmor = true;
+
+        /// <summary>
+        /// Add the vehicle's own armour plates on top of the donor's, the way the Leopard 2A7HU mod does it,
+        /// instead of rewriting the donor's values and retiring the plates this mod thinks it covers. Off
+        /// leaves the LEO2A3's protection exactly as it shipped, which is what a plain model swap wants.
+        /// </summary>
+        public static readonly bool OverlayArmor = true;
+
+        /// <summary>
+        /// Also collider in the x-ray arrays the visible applique does not stand for: mantlet block, turret
+        /// rear, hull deck, firewall and the spall liners.
+        /// </summary>
+        public static readonly bool OverlayXrayArmor = true;
 
         /// <summary>
         /// Attach a heat signature source to the imported visual. Off because the donor's own source stays on
@@ -190,6 +226,18 @@ namespace Leopard2A7V
         /// <summary>Model space belt box of the commander's machine gun.</summary>
         public static readonly Vector3 RoofGunRackPoint = new Vector3(-1.05f, 2.83f, -0.25f);
 
+        /// <summary>
+        /// The x-ray export's frame against this game's. War Thunder's export is +X forward with +Z to
+        /// starboard; a GHPC unit is +Z forward with +X to starboard, which is the swap ObjModel and LpInterior
+        /// make when they read their OBJ files. Every centre, size or axis measured off the export has to go
+        /// through this before it is a position on the vehicle: left unswapped, an engine bay or an ammunition
+        /// rack comes out ninety degrees round and sits in the wrong compartment.
+        /// </summary>
+        public static Vector3 FromExport(Vector3 export)
+        {
+            return new Vector3(export.z, export.y, export.x);
+        }
+
         public static string AssetDir =>
             System.IO.Path.Combine(MelonLoader.Utils.MelonEnvironment.ModsDirectory, "Leopard2A7V");
 
@@ -254,7 +302,7 @@ namespace Leopard2A7V
             TextureResolution = Category.CreateEntry("TextureResolution", "2k",
                 "Texture detail: 2k or 4k. 4k is sharper up close but needs far more video memory and load time");
 
-            ArmorCoefficient = Category.CreateEntry("ArmorCoefficient", 1.2f,
+            ArmorCoefficient = Category.CreateEntry("ArmorCoefficient", 1.0f,
                 "Armour strength multiplier over every zone (1 = real-data protection, 0.3-3)");
 
             Ammo = Category.CreateEntry("Ammo", "dm73",

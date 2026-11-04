@@ -24,12 +24,20 @@ namespace Leopard2A7V
         private static readonly HashSet<int> Logged = new HashSet<int>();
         private static readonly FieldInfo VariableAverageRha = AccessTools.Field(typeof(VariableArmor), "AverageRha");
 
+        /// <summary>
+        /// Once per session, not once per vehicle: the list is fifty lines long, and a mission with a company
+        /// of 2A7Vs would otherwise bury everything else in the log.
+        /// </summary>
+        private static bool _spoke;
+
         /// <summary>Pieces listed per kind before the log stops being readable.</summary>
         private const int PerKind = 24;
 
         public static void Apply(GameObject unitRoot)
         {
             if (unitRoot == null) return;
+            if (_spoke) return;
+            _spoke = true;
             if (!Logged.Add(unitRoot.GetInstanceID())) return;
 
             UniformArmor[] uniform = unitRoot.GetComponentsInChildren<UniformArmor>(true);

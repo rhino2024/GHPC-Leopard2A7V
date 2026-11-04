@@ -578,6 +578,15 @@ namespace Leopard2A7V
 
             if (!Mounted) MountWhenReady();
 
+            // Only the vehicle the player is actually driving answers the key. Every converted unit runs one of
+            // these toggles, and without this check a Z press is handled by all of them - each calls
+            // TempAttachToSlot on its own slot and the last one to run wins. That is exactly what "the
+            // commander's view of another vehicle came up" looks like.
+            PlayerInput input = PlayerInput.Instance;
+            if (input != null && Unit != null &&
+                (input.CurrentPlayerUnit == null || !ReferenceEquals(input.CurrentPlayerUnit.gameObject, Unit)))
+                return;
+
             // Every unit runs its own toggle, so without this a Z press is handled by all of them and the last
             // one to call the camera manager wins - which is how the commander's sight of a teammate's tank
             // could come up instead. Only the unit the player is driving answers the key.

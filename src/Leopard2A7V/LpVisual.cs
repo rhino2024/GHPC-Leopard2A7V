@@ -169,17 +169,21 @@ namespace Leopard2A7V
             LpBaseRig.Apply(unit);
             LpDonorArt.Request(unitRoot);
             LpArmorLog.Apply(unitRoot);
-            // The donor's armour components exist right now and are gone within the second: the game
-            // tears the AAR root down after the spawn, so the retrying watch finds nothing to write to.
-            // Applying the table here, while the 220 uniform and 33 measured pieces are still in the tree,
-            // is the only window that has them.
             MelonLogger.Msg("[L2A7V] armour at conversion: " +
                             unitRoot.GetComponentsInChildren<UniformArmor>(true).Length + " uniform + " +
                             unitRoot.GetComponentsInChildren<VariableArmor>(true).Length +
                             " measured on '" + unitRoot.name + "'");
-            LpArmor.Apply(unitRoot);
             ApplyHeat(result);
             LpDiagnostics.DumpOnce(unitRoot);
+            // Added plates only, exactly the way the Leopard 2A7HU mod does it: the donor's own armour keeps
+            // every value and every collider it shipped with, and this pass puts the 2A7V's packages where the
+            // visible applique and the x-ray arrays say they are.
+            Transform armorRoot = hullBone != null ? hullBone : unit;
+            Vector3 armorLocal = hullBone != null
+                ? hullBone.InverseTransformPoint(unit.TransformPoint(LpConfig.Offset))
+                : LpConfig.Offset;
+            LpArmorOverlay.Apply(unitRoot, turretBone, armorRoot, armorLocal);
+            LpDonorArtWatch.SetConverted(unitRoot);
             return result;
         }
 

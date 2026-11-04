@@ -33,6 +33,8 @@ namespace Leopard2A7V
     {
         private const string DonorPlateName = "EMES-15";
         internal const string PlateName = "LEO2A7V";
+        /// <summary>The node the per-vehicle reticle copy is created under, inside the optic.</summary>
+        private const string CloneName = "L2A7V_GunnerReticle";
         private const string RoofGunPlateName = "LEO2A7V_AA";
 
         /// <summary>
@@ -76,19 +78,49 @@ namespace Leopard2A7V
 
             foreach (UsableOptic optic in unitRoot.GetComponentsInChildren<UsableOptic>(true))
             {
-                ReticleMesh mesh = optic.reticleMesh;
-                if (mesh == null || mesh.reticleSO == null) continue;
-                if (mesh.reticleSO.name != DonorPlateName) continue;
-                if (ReferenceEquals(mesh.reticleSO, _plate)) return;
+                ReticleMesh original = optic.reticleMesh;
+                if (original == null || original.reticleSO == null) continue;
+                bool ours = original.reticleSO.name.StartsWith(PlateName, System.StringComparison.Ordinal);
+                if (original.reticleSO.name != DonorPlateName && !ours) continue;
 
-                if (_plate == null && !BuildPlate(mesh.reticleSO)) return;
+                if (_plate == null && !BuildPlate(original.reticleSO)) return;
+
+                // The whole reticle node is CLONED per vehicle and the optic is pointed at the clone, which is
+                // how the L2A7HU mod installs a reticle onto a second vehicle: a fresh ReticleMesh that has
+                // never been loaded, with our plate handed to it once.
+                //
+                // Swapping the plate on the donor's own ReticleMesh and re-loading it looked equivalent and is
+                // not: Load() returns immediately when the renderer still holds a mesh, and the component
+                // keeps per-instance state (its alignment bones, its submesh table, its cached tree) from the
+                // donor plate it was built for. Reused across several 2A7Vs, that state is what left the
+                // graticule blank - the mesh came out with no bones bound to the vehicle drawing it.
+                Transform existing = optic.transform.Find(CloneName);
+                if (existing != null)
+                {
+                    ReticleMesh already = existing.GetComponent<ReticleMesh>();
+                    if (already != null) optic.reticleMesh = already;
+                    return;
+                }
+
+                original.gameObject.SetActive(false);
+
+                GameObject clone = UnityEngine.Object.Instantiate(original.gameObject, optic.transform, false);
+                clone.name = CloneName;
+                ReticleMesh mesh = clone.GetComponent<ReticleMesh>();
+                if (mesh == null)
+                {
+                    MelonLogger.Warning("[L2A7V] the reticle copy lost its ReticleMesh; the donor plate stays");
+                    UnityEngine.Object.Destroy(clone);
+                    original.gameObject.SetActive(true);
+                    continue;
+                }
 
                 mesh.reticleSO = _plate;
-
-                // Load() keeps the mesh it built the first time, so it has to be dropped to rebuild.
-                SkinnedMeshRenderer renderer = mesh.GetComponent<SkinnedMeshRenderer>();
+                SkinnedMeshRenderer renderer = clone.GetComponent<SkinnedMeshRenderer>();
                 if (renderer != null) renderer.sharedMesh = null;
+                clone.SetActive(true);
                 mesh.Load();
+                optic.reticleMesh = mesh;
 
                 // CacheLights() fills the light colour array before Load() hands the plate's own light
                 // list to the mesh, so the new slot keeps the donor's value until it is pushed. Black is

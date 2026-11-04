@@ -214,182 +214,237 @@ namespace Leopard2A7V
     }
 
     /// <summary>
-    /// Ticks the three deferred writes until each of them reports that its target exists.
+    /// Keeps the donor's own LEO2A3 art out of the picture, for as long as its unit lives, and ticks the three
+    /// deferred writes until each of them reports that its target exists.
+    ///
+    /// This is a standing job, not a one-shot pass, for three measured reasons. The donor's art pass arrives a
+    /// moment after the conversion and brings a second set of renderers with it (the camouflage net is one);
+    /// GHPC re-enables renderers from its own passes when the AAR root is torn down and when LODs switch; and
+    /// a converted unit can be cloned again from the template, so each one needs its own list rather than the
+    /// last one converting. Every piece of state below is therefore per-unit, and the hiding is re-stated in
+    /// LateUpdate, after the game's own updates have run.
     /// </summary>
     public class LpDonorArtWatch : MonoBehaviour
     {
         private const float IntervalSeconds = 0.5f;
         private const float TimeoutSeconds = 120f;
+        private const float RescanSeconds = 2f;
 
+        private GameObject _unit;
+        private readonly HashSet<Renderer> _hidden = new HashSet<Renderer>();
         private float _elapsed;
         private float _next;
-        private static void RehideDonorArt()
+        private float _nextRescan;
+        private bool _gunDone;
+        private bool _armourDone;
+        private bool _gearDone;
+        private bool _crewDone;
+        private bool _writesDone;
+        private bool _guardLogged;
+        private int _reports;
+
+        private void Awake()
         {
-            Renderer[] donor = LpBaseRig.DonorSnapshot;
-            if (donor == null) return;
-
-            if (Time.unscaledTime >= _nextRescan)
-            {
-                _nextRescan = Time.unscaledTime + 2f;
-                RescanDonorArt();
-            }
-
-            int hidden = 0;
-            foreach (Renderer renderer in donor)
-            {
-                if (renderer == null) continue;
-                if (renderer is ParticleSystemRenderer) continue;
-                if (renderer.enabled) { renderer.enabled = false; hidden++; }
-                if (renderer.transform.localScale != Vector3.zero) renderer.transform.localScale = Vector3.zero;
-            }
-            if (hidden > 0 && !_guardLogged)
-            {
-                _guardLogged = true;
-                MelonLogger.Msg("[L2A7V] guard switched " + hidden + " donor renderer(s) back off");
-            }
+            _unit = gameObject;
         }
 
         /// <summary>
-        /// Picks up donor renderers that were not in the snapshot.
+        /// Called once the art pass has finished converting this unit: seeds the list with the renderers the
+        /// pre-conversion snapshot found, hides them, and from then on the per-frame guard owns them.
         ///
-        /// The snapshot is taken just before the conversion, but the donor's own art pass runs a moment later and
-        /// can add renderers - the camouflage net is one of them. Those never made it into the list, so they
-        /// stayed visible and the old hull showed through. A scan every couple of seconds is cheap.
+        /// The snapshot is only a seed, never the list itself. Treating it as the list - or worse, replacing it
+        /// with the renderers that were *kept* - is what made an earlier build hide this mod's own hull and
+        /// then let the donor's back on screen when the guard retired.
         /// </summary>
-        private static void RescanDonorArt()
+        internal void Adopt()
         {
-            Renderer[] snapshot = LpBaseRig.DonorSnapshot;
-            if (_convertedUnit == null) return;
+            _unit = gameObject;
+            _hidden.Clear();
+            Renderer[] seed = LpBaseRig.DonorSnapshot;
+            if (seed != null)
+                foreach (Renderer renderer in seed)
+                    if (renderer != null && !LpVisual.IsImportedArt(renderer.transform)) _hidden.Add(renderer);
 
-            HideLeftovers();
+            Sweep();
+            Rehide();
+            Report();
+            MelonLogger.Msg("[L2A7V] guard attached to " + gameObject.name + " after conversion: " +
+                            _hidden.Count + " donor renderer(s) kept out of the picture");
+        }
 
-            var known = new System.Collections.Generic.HashSet<Renderer>(snapshot ?? new Renderer[0]);
-            var list = new System.Collections.Generic.List<Renderer>(known);
+        /// <summary>
+        /// Adds every renderer under this unit that the hide rule covers and our list does not have yet.
+        /// Goes through <see cref="LpBaseRig.ShouldHide"/> and not a rule of its own, because the donor's
+        /// wheels, its two skinned track loops, its crew compartment and the sight housings have to keep
+        /// drawing - they are what this vehicle drives on and sees through.
+        /// </summary>
+        private int Sweep()
+        {
+            if (_unit == null) _unit = gameObject;
             int added = 0;
-            foreach (Renderer renderer in _convertedUnit.GetComponentsInChildren<Renderer>(true))
+            foreach (Renderer renderer in _unit.GetComponentsInChildren<Renderer>(true))
             {
-                if (renderer == null || known.Contains(renderer)) continue;
+                if (renderer == null) continue;
                 if (renderer is ParticleSystemRenderer) continue;
                 if (LpVisual.IsImportedArt(renderer.transform)) continue;
+                if (renderer.gameObject.layer == LpBaseRig.ImprintLayer) continue;
                 if (!LpBaseRig.ShouldHide(renderer.transform, renderer.name)) continue;
-                list.Add(renderer);
+                if (!_hidden.Add(renderer)) continue;
                 added++;
+                // The switch and the scale are both things the game's own passes re-state, so the geometry
+                // goes as well: a renderer with no indices cannot be made to draw by toggling a bool.
+                try { LpBaseRig.StripGeometry(renderer); }
+                catch (System.Exception error)
+                {
+                    MelonLogger.Warning("[L2A7V] could not strip '" + LpBaseRig.PathOf(renderer.transform) +
+                                        "': " + error.Message);
+                }
             }
-            if (added == 0) return;
-            LpBaseRig.DonorSnapshot = list.ToArray();
-            MelonLogger.Msg("[L2A7V] guard picked up " + added + " late donor renderer(s)");
+            if (added > 0)
+                MelonLogger.Msg("[L2A7V] donor art: " + added + " renderer(s) added to the hide list, " +
+                                _hidden.Count + " on it now");
+            return added;
         }
 
-        private bool _gunDone;
-        /// <summary>
-        /// Hides every renderer under the unit that does not belong to this mod's art.
-        ///
-        /// This is the T-90A mod's HideLeftovers rule and it is deterministic: the donor is whatever is left
-        /// over once the art pass has put our own meshes in place, so there is no list to keep in step and no
-        /// heuristic to get the camouflage net wrong. Running gear stays when the configuration uses the
-        /// donor's, and the track-imprint brushes stay on their layer.
-        /// </summary>
-        private static int HideLeftovers()
+        /// <summary>Re-states the flag that takes a renderer off screen.</summary>
+        private void Rehide()
         {
-            if (_convertedUnit == null) return 0;
-            int hidden = 0;
-            var kept = new System.Collections.Generic.List<Renderer>();
-            foreach (Renderer renderer in _convertedUnit.GetComponentsInChildren<Renderer>(true))
+            int switched = 0;
+            foreach (Renderer renderer in _hidden)
             {
                 if (renderer == null) continue;
-                if (renderer is ParticleSystemRenderer) continue;
-                if (LpVisual.IsImportedArt(renderer.transform)) { kept.Add(renderer); continue; }
-                if (renderer.gameObject.layer == LpBaseRig.ImprintLayer) { kept.Add(renderer); continue; }
-
-                string path = LpBaseRig.PathOf(renderer.transform).ToLowerInvariant();
-                bool runningGear = path.Contains("wheel") || path.Contains("track") || path.Contains("suspension");
-                if (LpConfig.UseDonorRunningGear && runningGear) { kept.Add(renderer); continue; }
-
-                if (renderer.enabled) { renderer.enabled = false; hidden++; }
-                if (renderer.transform.localScale != Vector3.zero)
-                    renderer.transform.localScale = Vector3.zero;
+                if (renderer.enabled)
+                {
+                    renderer.enabled = false;
+                    switched++;
+                }
             }
-
-            if (hidden > 0)
+            if (switched > 0 && !_guardLogged)
             {
-                LpBaseRig.DonorSnapshot = kept.ToArray();
-                MelonLogger.Msg("[L2A7V] leftovers: hid " + hidden + " donor renderer(s), kept " +
-                                kept.Count + " (art, running gear, imprints)");
+                _guardLogged = true;
+                MelonLogger.Msg("[L2A7V] guard switched " + switched + " donor renderer(s) back off");
             }
-            return hidden;
         }
 
-        private static GameObject _convertedUnit;
-        private static bool _guardLogged;
-        private static float _nextRescan;
-        private bool _armourDone;
-        private bool _crewDone;
+        /// <summary>
+        /// Names any renderer that is still drawing and is not this mod's art. If this list is not empty the
+        /// old hull is still visible, and the names say which part of it.
+        /// </summary>
+        private void Report()
+        {
+            if (_unit == null) return;
+            int shown = 0, total = 0;
+            foreach (Renderer renderer in _unit.GetComponentsInChildren<Renderer>(true))
+            {
+                if (renderer == null || !renderer.enabled) continue;
+                if (renderer is ParticleSystemRenderer) continue;
+                if (LpVisual.IsImportedArt(renderer.transform)) continue;
+                if (renderer.gameObject.layer == LpBaseRig.ImprintLayer) continue;
+                if (!LpBaseRig.ShouldHide(renderer.transform, renderer.name)) continue;
+                total++;
+                if (shown++ >= 12) continue;
+                MelonLogger.Warning("[L2A7V] still drawing: " + LpBaseRig.PathOf(renderer.transform));
+            }
+            if (total > 0 && _reports < 5)
+            {
+                _reports++;
+                MelonLogger.Warning("[L2A7V] donor renderers still drawing: " + total);
+            }
+            else if (total == 0 && _reports == 0)
+            {
+                _reports = 1;
+                MelonLogger.Msg("[L2A7V] donor renderers still drawing: 0");
+            }
+
+            // The armour is the other half of this job: a piece whose transform was collapsed somewhere up the
+            // chain answers nothing, and the vehicle reads as unarmoured on that face with no other symptom.
+            int collapsed = 0;
+            foreach (GHPC.UniformArmor armor in _unit.GetComponentsInChildren<GHPC.UniformArmor>(true))
+            {
+                if (armor == null) continue;
+                if (!armor.gameObject.name.StartsWith("L2A7V_XrayArmor", System.StringComparison.Ordinal)) continue;
+                Vector3 scale = armor.transform.lossyScale;
+                if (Mathf.Abs(scale.x) < 0.05f || Mathf.Abs(scale.y) < 0.05f || Mathf.Abs(scale.z) < 0.05f)
+                    collapsed++;
+            }
+            if (collapsed > 0 && _collapsedReported < 3)
+            {
+                _collapsedReported++;
+                MelonLogger.Warning("[L2A7V] " + collapsed + " armour piece(s) sit under a collapsed transform " +
+                                    "and cannot be hit; check what was scaled to zero above them");
+            }
+
+            // One hard data point on where the armour actually is, in world space, so the next log says
+            // whether a plate covers the hull it is drawn on instead of leaving us to guess from a screenshot.
+            if (!_sampled)
+            {
+                foreach (GHPC.UniformArmor armor in _unit.GetComponentsInChildren<GHPC.UniformArmor>(true))
+                {
+                    if (armor == null) continue;
+                    if (!armor.gameObject.name.StartsWith("L2A7V_XrayArmor", System.StringComparison.Ordinal)) continue;
+                    Collider collider = armor.GetComponent<Collider>();
+                    _sampled = true;
+                    MelonLogger.Msg("[L2A7V] armour sample: '" + armor.Name + "' world " +
+                                    (collider != null ? collider.bounds.center.ToString("0.0") + " size " +
+                                                        collider.bounds.size.ToString("0.00") + " enabled " +
+                                                        collider.enabled : "no collider"));
+                    break;
+                }
+            }
+        }
+
+        private bool _sampled;
+        private int _collapsedReported;
+
+        /// <summary>Tells the guard of a freshly converted unit to take over. Called by the art pass itself.</summary>
+        internal static void SetConverted(GameObject unit)
+        {
+            if (unit == null) return;
+            LpDonorArtWatch watch = unit.GetComponent<LpDonorArtWatch>();
+            if (watch == null) watch = unit.AddComponent<LpDonorArtWatch>();
+            watch.Adopt();
+        }
 
         private void Update()
         {
+            if (_writesDone) return;
             _elapsed += Time.deltaTime;
-            RehideDonorArt();                       // every frame: the game re-enables these at will
             if (Time.unscaledTime < _next) return;
             _next = Time.unscaledTime + IntervalSeconds;
 
             if (!_gunDone) _gunDone = LpWeapons.ApplyGunList(gameObject);
-
-            // The donor's LEO2A3 art can come back on its own: the game re-enables renderers when the AAR root
-            // is torn down and when LODs switch, which is what makes the old hull show through ours. Re-hiding
-            // here is cheap - the scale is already zero, so only the flag needs checking.
-            RehideDonorArt();
             LpWeapons.ApplyThirdRound(gameObject);   // self-guarded and idempotent
-            if (!_armourDone) _armourDone = LpArmor.Apply(gameObject);
             if (!_crewDone) _crewDone = LpDonorArt.HideDonorCrew(gameObject);
+            // A unit spawned from the template has no wheel bones until the game's art pass gives it a rig, so
+            // the gear built at conversion is a static stand-in. This replaces it the moment the bones exist.
+            if (!_gearDone) _gearDone = LpRunningGear.Ensure(transform);
 
-            if (_gunDone && _armourDone && _crewDone)
+            if (!(_gunDone && _crewDone && _gearDone))
             {
-                Destroy(this);
-                return;
+                if (_elapsed < TimeoutSeconds) return;
+                MelonLogger.Warning("[L2A7V] stopped waiting for the donor's art pass after " + TimeoutSeconds +
+                                    " s (gun list " + _gunDone + ", crew figures " + _crewDone +
+                                    ", running gear " + _gearDone + ")");
             }
-            if (_elapsed < TimeoutSeconds) return;
-
-            MelonLogger.Warning("[L2A7V] stopped waiting for the donor's art pass after " + TimeoutSeconds +
-                                " s (gun list " + _gunDone + ", armour " + _armourDone +
-                                ", crew figures " + _crewDone + ")");
-            Destroy(this);
-        }
-    }
-
-
-    /// <summary>
-    /// Keeps calling the armour pass on every converted unit until it reports success.
-    ///
-    /// The per-unit watcher never fired in practice: the log shows the donor report (220 uniform + 33
-    /// raycast pieces) but no "protection applied" line at all, so the table simply never landed and every
-    /// composite array kept the donor's 10 mm fallback. This driver is attached to a host of its own, so it
-    /// ticks no matter what happens to the unit's own hierarchy, and it retries once a second until each
-    /// converted unit is done.
-    /// </summary>
-    public class LpArmorDriver : MonoBehaviour
-    {
-        private static LpArmorDriver _instance;
-
-        private float _next;
-
-        internal static void Ensure()
-        {
-            if (_instance != null) return;
-            var host = new GameObject("L2A7V_ArmourDriver");
-            UnityEngine.Object.DontDestroyOnLoad(host);
-            _instance = host.AddComponent<LpArmorDriver>();
+            _writesDone = true;
         }
 
-        private void Update()
+        /// <summary>
+        /// The guard itself, after the game has had its say: AarController re-shows what it thinks should be
+        /// drawn, the LOD pass re-enables renderers, and the donor's late art arrives at any time.
+        /// </summary>
+        private void LateUpdate()
         {
-            if (Time.unscaledTime < _next) return;
-            _next = Time.unscaledTime + 1f;
+            // The after-action picture has one owner: LpDonorInteriorHider, which takes the whole donor set
+            // out while the report is up. Two systems writing the same renderer flags every frame would only
+            // take turns undoing each other.
+            if (GHPC.AarController.InAar) return;
 
-            foreach (LpConvertBehaviour marker in UnityEngine.Object.FindObjectsOfType<LpConvertBehaviour>())
-            {
-                if (marker == null) continue;
-                LpArmor.Apply(marker.gameObject);
-            }
+            Rehide();
+            if (Time.unscaledTime < _nextRescan) return;
+            _nextRescan = Time.unscaledTime + RescanSeconds;
+            if (Sweep() > 0) Rehide();
+            Report();
         }
     }
 }

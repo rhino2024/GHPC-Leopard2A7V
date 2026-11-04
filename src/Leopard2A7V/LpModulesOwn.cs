@@ -18,7 +18,9 @@ namespace Leopard2A7V
     /// wrong one compiles and does nothing at runtime, so every write here goes through reflection and both
     /// shapes are filled when present.
     ///
-    /// Layout comes from the object's own x-ray export:
+    /// Layout comes from the object's own x-ray export, in that export's frame (+X forward with +Z to
+    /// starboard, as ObjModel reads it), so the numbers below are handed to LpConfig.FromExport before they
+    /// are placed on the rig, whose forward is +Z:
     ///
     ///   ammo_hull_xray    ( 1.835, 1.089, -0.352)  size (0.848, 0.706, 1.122)
     ///   ammo_turret_xray  (-1.373, 2.151, -0.644)  size (0.560, 0.523, 0.798)
@@ -27,7 +29,6 @@ namespace Leopard2A7V
     {
         private const string Tag = "[L2A7V][modules]";
 
-        private const float IgnitionChance = 0.55f;
         private const float IgnitionDelay = 1.2f;
 
         private sealed class Spec
@@ -93,18 +94,23 @@ namespace Leopard2A7V
 
             var go = new GameObject("L2A7V_Module " + spec.Name);
             go.transform.SetParent(space, false);
-            go.transform.position = space.TransformPoint(spec.Centre);
+            // The spec's numbers are the export's, where +X is forward; the rig is this game's, where +Z is.
+            go.transform.position = space.TransformPoint(LpConfig.FromExport(spec.Centre));
             go.transform.rotation = space.rotation;
             go.transform.localScale = Vector3.one;
             go.layer = layer;
             try { go.tag = "Penetrable"; } catch (UnityException) { }
 
             var box = go.AddComponent<BoxCollider>();
-            box.size = spec.Size;
+            box.size = LpConfig.FromExport(spec.Size);
             box.isTrigger = false;
 
             var module = go.AddComponent<GHPC.Equipment.DestructibleComponent>();
             Configure(module, spec.Health, spec.Threshold);
+            // Damage on these boxes used to be silent: the health fell and nothing happened, so a hit read as
+            // "no effect". Log every change and every destruction, and say why the cook-off did or did not run.
+            module.HealthChanged += (source, percent) =>
+                MelonLogger.Msg(Tag + " '" + spec.Name + "' health " + (percent * 100f).ToString("0") + "%");
             module.Destroyed += _ => CookOff(info, go.transform.position, spec.Name);
 
             // The module is a bare hit box; without an AAR visual the after-action viewer shows nothing broken,
@@ -181,7 +187,24 @@ namespace Leopard2A7V
             MelonLogger.Msg(Tag + " ammunition rack '" + name + "' destroyed");
             if (info == null || info.AmmoRacks == null || info.AmmoRacks.Count == 0)
             {
-                MelonLogger.Warning(Tag + " no ammo racks on the vehicle; nothing to set on fire");
+                // The LEO2A3 donor can end up with no racks at all, and then a destroyed rack module had no
+                // consequence whatsoever. Make one on the spot: a bare AmmoRack registers itself as a slot.
+                GameObject spawned = new GameObject("L2A7V_AmmoRack");
+                spawned.transform.position = position;
+                var own = spawned.AddComponent<AmmoRack>();
+                own.FriendlyName = "2A7V ammunition";
+                if (info != null)
+                {
+                    if (info.AmmoRacks == null)
+                    {
+                        var list = typeof(VehicleInfo).GetProperty("AmmoRacks");
+                        if (list != null && list.CanWrite)
+                            list.SetValue(info, new System.Collections.Generic.LinkedList<AmmoRack>());
+                    }
+                    if (info.AmmoRacks != null) info.AmmoRacks.AddLast(own);
+                }
+                own.NotifyRackFire();
+                MelonLogger.Msg(Tag + " no racks on the vehicle; built one at the hit and set it on fire");
                 return;
             }
 
@@ -221,11 +244,6 @@ namespace Leopard2A7V
                 return;
             }
 
-            if (UnityEngine.Random.value > IgnitionChance)
-            {
-                MelonLogger.Msg(Tag + " '" + nearest.GetFriendlyName() + "' smouldered but did not catch");
-                return;
-            }
 
             GameObject host = new GameObject("L2A7V_CookOffTimer");
             var timer = host.AddComponent<CookOffTimer>();
@@ -407,7 +425,8 @@ namespace Leopard2A7V
         {
             GameObject host = new GameObject("L2A7V_Heat_Engine");
             host.transform.SetParent(space, false);
-            host.transform.position = space.TransformPoint(new Vector3(-2.331f, 1.093f, -0.014f));
+            host.transform.position = space.TransformPoint(
+                LpConfig.FromExport(new Vector3(-2.331f, 1.093f, -0.014f)));
             var heat = host.AddComponent<HeatSource>();
             heat.Heat = 0.85f;
             MelonLogger.Msg(Tag + " engine heat source at " + host.transform.position.ToString("0.0"));

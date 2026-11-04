@@ -66,8 +66,12 @@ namespace Leopard2A7V
         {
             Transform node = zone.transform;
 
+            // The targets are read off the x-ray export, which is +X forward; the rig is +Z forward.
+            Vector3 centre = LpConfig.FromExport(target.Centre);
+            Vector3 size = LpConfig.FromExport(target.Size);
+
             Vector3 current = space.InverseTransformPoint(node.position);
-            float drift = (current - target.Centre).magnitude;
+            float drift = (current - centre).magnitude;
             if (drift < 0.05f) return false;
 
             // If the zone draws anything, move its collider instead of its transform: dragging the transform
@@ -83,8 +87,8 @@ namespace Leopard2A7V
                     foreach (Collider extra in node.GetComponents<Collider>()) extra.enabled = false;
                     zoneBox = node.gameObject.AddComponent<BoxCollider>();
                 }
-                zoneBox.center = node.InverseTransformPoint(space.TransformPoint(target.Centre));
-                Vector3 sizeLocal = node.InverseTransformVector(space.TransformVector(target.Size));
+                zoneBox.center = node.InverseTransformPoint(space.TransformPoint(centre));
+                Vector3 sizeLocal = node.InverseTransformVector(space.TransformVector(size));
                 zoneBox.size = new Vector3(Mathf.Abs(sizeLocal.x), Mathf.Abs(sizeLocal.y), Mathf.Abs(sizeLocal.z));
                 zoneBox.isTrigger = false;
                 zoneBox.enabled = true;
@@ -95,9 +99,9 @@ namespace Leopard2A7V
             // Put the hit zone's transform where the export says the module is, and give its collider the
             // module's own size. A box is used even where the donor had a capsule: the export only measures a
             // bounding box, and a box at the right place is worth more than a capsule at the wrong one.
-            node.position = space.TransformPoint(target.Centre);
-            Vector3 size = space.TransformVector(target.Size);
-            size = new Vector3(Mathf.Abs(size.x), Mathf.Abs(size.y), Mathf.Abs(size.z));
+            node.position = space.TransformPoint(centre);
+            Vector3 worldSize = space.TransformVector(size);
+            worldSize = new Vector3(Mathf.Abs(worldSize.x), Mathf.Abs(worldSize.y), Mathf.Abs(worldSize.z));
 
             BoxCollider box = node.GetComponent<BoxCollider>();
             if (box == null)
@@ -105,7 +109,7 @@ namespace Leopard2A7V
                 foreach (Collider extra in node.GetComponents<Collider>()) extra.enabled = false;
                 box = node.gameObject.AddComponent<BoxCollider>();
             }
-            box.size = size;
+            box.size = worldSize;
             box.isTrigger = false;
             box.enabled = true;
             return true;

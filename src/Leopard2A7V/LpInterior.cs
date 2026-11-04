@@ -1,297 +1,128 @@
-using MelonLoader;
-using System;
 using System.Collections.Generic;
-using System.Globalization;
-using System.IO;
-using System.Threading.Tasks;
+using MelonLoader;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace Leopard2A7V
 {
     /// <summary>
-    /// The War Thunder x-ray interior, brought in as a second mesh set beside the exterior art.
+    /// The War Thunder compartment, hung on the same pivots as the exterior art and registered as x-ray art.
     ///
-    /// The x-ray export is the same model as the exterior one, in the same frame and to the same scale,
-    /// so no calibration is needed: the three groups are attached with exactly the anchors the exterior
-    /// groups use, which puts the engine behind the firewall, the carousel under the turret floor and
-    /// the breech inside the mantlet without a second offset to maintain.
+    /// This is the L2A7HU mod's interior pass. Every module keeps its own class colour, taken from the donor's
+    /// own interior sheets (the numbers in the palette comments are the clusters lp_interior_palette.txt
+    /// measured on LEO2_int / M1IP_interior), so the after-action view reads as a compartment rather than one
+    /// grey mass. The materials are flat clones of the donor's paint template through
+    /// <see cref="LpAssets.CreateFlatMaterial"/>, which keeps them on the vehicle shader with the same keywords
+    /// and render queue as the rest of the vehicle.
     ///
-    /// The meshes ride the exterior art's pivots on nodes of their own. Riding those pivots is what keeps
-    /// the compartment out of an eyepiece view - the sight pass scales the art pivots to nothing there,
-    /// and a compartment drawn inside that view would sit between the eye and the reticle - while the
-    /// nodes still get skipped by the donor-stripping pass, which ignores anything named after this mod.
+    /// AarVisual with XrayOnly is the game's own switch for "drawn only in the x-ray view": it moves the
+    /// renderers to the x-ray layer and leaves them off everywhere else. The node is created inactive and
+    /// activated only after the component's mode is set, because the mode is read in Awake.
     ///
-    /// Each node is then registered as x-ray art the way the game's own prefabs do, so the compartment is
-    /// drawn only while the x-ray view is live. That matters here more than it does for a vanilla unit: the
-    /// donor's authored interior subtrees are marked hide-until-AAR, so a live x-ray view of this vehicle
-    /// shows our modules and nothing else, and they are close enough to the outer surface to read as
-    /// damage on the paint if they were allowed to draw all the time.
+    /// Riding the art pivots also keeps the compartment out of an eyepiece: LpSightView scales those pivots to
+    /// nothing inside the gunner's sight, and an interior drawn between the eye and the reticle would blank the
+    /// view.
     /// </summary>
     public static class LpInterior
     {
-        public static volatile bool Loaded;
-        public static volatile bool Failed;
-        public static string Error;
-
         /// <summary>
-        /// Triangles of the War Thunder crew figures in the compartment (material int_crew). Non-zero is what
+        /// Triangles of the War Thunder crew figures in the compartment (class int_crew). Non-zero is what
         /// lets the donor's own soldiers be taken out without leaving empty seats behind.
         /// </summary>
         public static int CrewTriangles { get; private set; }
 
-        private sealed class Part
-        {
-            public string Bone;
-            public string Material;
-            public readonly List<Vector3> Positions = new List<Vector3>();
-            public readonly List<Vector3> Normals = new List<Vector3>();
-            public readonly List<int> Triangles = new List<int>();
-            public readonly Dictionary<Vector3Int, int> VertexMap = new Dictionary<Vector3Int, int>();
-        }
+        public static bool Loaded { get { return LpXrayParts.Loaded; } }
+        public static bool Failed { get { return LpXrayParts.Failed; } }
+        public static string Error { get { return LpXrayParts.Error; } }
 
-        private static readonly List<Part> Parts = new List<Part>();
-        private static readonly Dictionary<string, Material> Materials = new Dictionary<string, Material>();
-        private static readonly Dictionary<string, Mesh> Meshes = new Dictionary<string, Mesh>();
-
-        /// <summary>
-        /// One colour per module class. The values the donor's own compartment sheets quantise to (see
-        /// ModSources/tools/lp_interior_palette.txt) are within a few units of neutral grey of each other -
-        /// 136/136/120 for armour plate against 120/120/104 for the liner - and drawn together in one mesh
-        /// they read as a single grey mass, so each class is given the hue its cluster means point at, with
-        /// the channels pulled apart and the whole lifted by roughly a sixth because the compartment draws
-        /// under the vehicle's own dim interior light. int_armor keeps the sheet's warm sand tone, int_fcs
-        /// the olive of the donor's cabinets, and int_ammo/int_crew take the ochre and khaki War Thunder's
-        /// x-ray art uses for propellant and for people. The gloss stays the alpha of the smoothness map.
-        /// </summary>
         private static readonly Dictionary<string, Color32> Palette = new Dictionary<string, Color32>
         {
-            { "int_armor", new Color32(172, 160, 118, 255) },     // from LEO2_int_co 36.1% (136,136,120)
-            { "int_liner", new Color32(140, 152, 148, 255) },     // from M1IP_interior_co 5.9% (120,120,104)
-            { "int_firewall", new Color32(122, 84, 62, 255) },    // from M1IP_interior_co 18.2% (56,56,40)
-            { "int_ammo", new Color32(198, 166, 72, 255) },       // from M1IP_interior_co 4.7% (96,96,80)
-            { "int_engine", new Color32(78, 82, 96, 255) },       // from M1IP_interior_co 9.7% (40,40,40)
-            { "int_fcs", new Color32(96, 124, 66, 255) },         // from LEO2_int_co 5.7% (56,72,40)
-            { "int_metal", new Color32(156, 158, 166, 255) },     // from LEO2_int_co 8.4% (120,120,120)
-            { "int_crew", new Color32(184, 158, 116, 255) },      // author's choice - khaki, not grey
+            { "int_armor", new Color32(172, 160, 118, 255) },     // LEO2_int_co 36.1% (136,136,120)
+            { "int_liner", new Color32(140, 152, 148, 255) },     // M1IP_interior_co 5.9% (120,120,104)
+            { "int_firewall", new Color32(122, 84, 62, 255) },    // M1IP_interior_co 18.2% (56,56,40)
+            { "int_ammo", new Color32(198, 166, 72, 255) },       // M1IP_interior_co 4.7% (96,96,80)
+            { "int_engine", new Color32(78, 82, 96, 255) },       // M1IP_interior_co 9.7% (40,40,40)
+            { "int_fcs", new Color32(96, 124, 66, 255) },         // LEO2_int_co 5.7% (56,72,40)
+            { "int_metal", new Color32(156, 158, 166, 255) },     // LEO2_int_co 8.4% (120,120,120)
+            { "int_crew", new Color32(184, 158, 116, 255) },      // khaki, as the x-ray art uses for people
         };
 
         private static readonly Dictionary<string, byte> Gloss = new Dictionary<string, byte>
         {
-            { "int_armor", 28 },
-            { "int_liner", 12 },
-            { "int_firewall", 20 },
-            { "int_ammo", 30 },
-            { "int_engine", 30 },
-            { "int_fcs", 44 },
-            { "int_metal", 38 },
-            { "int_crew", 14 },
+            { "int_armor", 28 }, { "int_liner", 12 }, { "int_firewall", 20 }, { "int_ammo", 30 },
+            { "int_engine", 30 }, { "int_fcs", 44 }, { "int_metal", 38 }, { "int_crew", 14 },
         };
+
+        private static readonly Dictionary<string, Material> Materials = new Dictionary<string, Material>();
+        private static readonly Dictionary<string, Mesh> Meshes = new Dictionary<string, Mesh>();
+        private static readonly Dictionary<string, List<string>> Submeshes = new Dictionary<string, List<string>>();
+
+        private sealed class Built
+        {
+            public Mesh Mesh;
+            public List<string> Classes;
+        }
 
         public static void Preload(string directory)
         {
-            if (!LpConfig.ShowInterior) return;
-            string path = Path.Combine(directory, "Interior.obj");
-            if (!File.Exists(path))
-            {
-                MelonLogger.Msg("[L2A7V] no Interior.obj beside the art, the crew compartment stays the donor's");
-                Failed = true;
-                return;
-            }
-
-            Task.Run(() =>
-            {
-                try
-                {
-                    Parse(path);
-                    Loaded = true;
-                }
-                catch (Exception ex)
-                {
-                    Error = ex.Message;
-                    Failed = true;
-                    MelonLogger.Error("[L2A7V] interior parse failed: " + ex);
-                }
-            });
+            // Parsed whether or not the compartment is drawn: the added armour arrays are read from the same
+            // export, so turning the interior off must not take the x-ray armour with it.
+            LpXrayParts.Preload(directory);
         }
 
-        private static void Parse(string path)
-        {
-            var positions = new List<Vector3>();
-            var normals = new List<Vector3>();
-            Part active = null;
-            string bone = null;
-            string material = null;
-
-            using (var reader = new StreamReader(path))
-            {
-                string line;
-                while ((line = reader.ReadLine()) != null)
-                {
-                    if (line.Length < 3 || line[0] == '#') continue;
-                    char second = line[1];
-                    if (line[0] == 'v')
-                    {
-                        if (second == ' ') positions.Add(ReadVector(line));
-                        else if (second == 'n' && line[2] == ' ') normals.Add(ReadVector(line));
-                    }
-                    else if (line[0] == 'g' && second == ' ')
-                    {
-                        string name = line.Substring(2).Trim();
-                        bone = name.StartsWith("interior_", StringComparison.OrdinalIgnoreCase)
-                            ? name.Substring("interior_".Length).ToLowerInvariant()
-                            : name.ToLowerInvariant();
-                        active = null;
-                    }
-                    else if (line[0] == 'u' && line.StartsWith("usemtl"))
-                    {
-                        material = line.Substring(6).Trim();
-                        active = null;
-                    }
-                    else if (line[0] == 'f' && second == ' ')
-                    {
-                        if (bone == null || material == null) continue;
-                        ReadFace(line, bone, material, positions, normals, ref active);
-                    }
-                }
-            }
-
-            int triangles = 0, crew = 0;
-            foreach (Part part in Parts)
-            {
-                triangles += part.Triangles.Count / 3;
-                if (part.Material == "int_crew") crew += part.Triangles.Count / 3;
-            }
-            CrewTriangles = crew;
-            MelonLogger.Msg($"[L2A7V] interior parsed: {Parts.Count} part(s), {triangles} triangle(s), " +
-                            $"{Palette.Count} material class(es), {CrewTriangles} of them the crew mannequins");
-        }
-
-        private static Vector3 ReadVector(string line)
-        {
-            string[] p = line.Substring(line[1] == ' ' ? 2 : 3).Split(
-                new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-            if (p.Length < 3) return Vector3.zero;
-            // The same swap the exterior parser runs: War Thunder is +X forward with +Z to starboard,
-            // GHPC is +Z forward with +X to starboard.
-            return new Vector3(ParseFloat(p[2]), ParseFloat(p[1]), ParseFloat(p[0]));
-        }
-
-        private static float ParseFloat(string token)
-        {
-            float value;
-            return float.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out value) ? value : 0f;
-        }
-
-        private static void ReadFace(string line, string bone, string material,
-            List<Vector3> positions, List<Vector3> normals, ref Part active)
-        {
-            if (active == null || active.Bone != bone || active.Material != material)
-            {
-                active = new Part { Bone = bone, Material = material };
-                Parts.Add(active);
-            }
-
-            string[] tokens = line.Substring(2).Split(
-                new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-            var corner = new int[tokens.Length];
-            for (int i = 0; i < tokens.Length; i++)
-            {
-                string[] comps = tokens[i].Split('/');
-                int positionId = IndexOf(comps, 0, positions.Count);
-                int normalId = comps.Length > 2 && comps[2].Length > 0 ? IndexOf(comps, 2, normals.Count) : -1;
-                var key = new Vector3Int(positionId, normalId, 0);
-                int index;
-                if (!active.VertexMap.TryGetValue(key, out index))
-                {
-                    index = active.Positions.Count;
-                    active.VertexMap.Add(key, index);
-                    active.Positions.Add(positions[Mathf.Clamp(positionId, 0, positions.Count - 1)]);
-                    active.Normals.Add(normalId >= 0 && normalId < normals.Count ? normals[normalId] : Vector3.up);
-                }
-                corner[i] = index;
-            }
-
-            for (int i = 2; i < tokens.Length; i++)
-            {
-                // Swapping the axes mirrors the mesh, so the winding is reversed to keep the faces out.
-                active.Triangles.Add(corner[0]);
-                active.Triangles.Add(corner[i]);
-                active.Triangles.Add(corner[i - 1]);
-            }
-        }
-
-        private static int IndexOf(string[] components, int slot, int count)
-        {
-            if (components.Length <= slot) return 0;
-            int value;
-            if (!int.TryParse(components[slot], NumberStyles.Integer, CultureInfo.InvariantCulture, out value))
-                return 0;
-            return value < 0 ? count + value : value - 1;
-        }
-
-        /// <summary>
-        /// Hangs the three groups on the pivots the exterior art uses. Returns the number of triangles
-        /// that made it onto the vehicle, which is the number the log reports.
-        /// </summary>
         public static int Attach(GameObject unitRoot, LpVisual.Assembly art)
         {
             if (!LpConfig.ShowInterior || art == null) return 0;
-            if (Failed)
+            if (!LpXrayParts.Loaded || LpXrayParts.Failed) return 0;
+
+            // Counted once, on the first spawn: the donor's own soldiers are only taken out when the imported
+            // compartment carries mannequins of its own to stand in for them.
+            if (CrewTriangles == 0)
             {
-                return 0;
-            }
-            if (!Loaded)
-            {
-                MelonLogger.Msg("[L2A7V] the interior is still parsing, this spawn keeps the donor's compartment");
-                return 0;
+                int crew = 0;
+                foreach (LpXrayParts.Part part in LpXrayParts.Parts)
+                    if (part.Class == "int_crew") crew += part.Triangles.Length / 3;
+                CrewTriangles = crew;
             }
 
             int total = 0;
-            _xrayNodes = 0;
             total += AttachBone("Hull", art.Hull, Vector3.zero);
             total += AttachBone("Turret", art.Turret, LpConfig.TurretAxis);
             total += AttachBone("Gun", art.Gun, LpConfig.GunAxis);
-            MelonLogger.Msg($"[L2A7V] interior attached: {total} triangle(s) on the hull, turret and gun bones, " +
-                            $"{_xrayNodes} node(s) registered as x-ray only");
+            if (total > 0)
+                MelonLogger.Msg("[L2A7V] x-ray compartment attached: " + total + " triangle(s) on the hull, " +
+                                "turret and gun pivots, drawn only in the after-action x-ray view");
             return total;
         }
-
-        private static int _xrayNodes;
 
         private static int AttachBone(string bone, Transform pivot, Vector3 anchor)
         {
             if (pivot == null) return 0;
             if (pivot.Find("L2A7V_Interior_" + bone) != null) return 0;
-            Mesh mesh = Build(bone, anchor);
-            if (mesh == null) return 0;
+
+            Built built = Build(bone, anchor);
+            if (built == null || built.Mesh == null) return 0;
 
             var node = new GameObject("L2A7V_Interior_" + bone);
             node.SetActive(false);
             node.transform.SetParent(pivot, false);
             node.layer = pivot.gameObject.layer;
 
-            node.AddComponent<MeshFilter>().sharedMesh = mesh;
+            node.AddComponent<MeshFilter>().sharedMesh = built.Mesh;
             var renderer = node.AddComponent<MeshRenderer>();
-            var materials = new Material[mesh.subMeshCount];
-            for (int i = 0; i < materials.Length; i++)
-                materials[i] = GetMaterial(mesh.name + "|" + i);
+            var materials = new Material[built.Classes.Count];
+            for (int i = 0; i < materials.Length; i++) materials[i] = GetMaterial(built.Classes[i]);
             renderer.sharedMaterials = materials;
-            // Inside a closed hull these can only shadow themselves, and the vehicle's own interior art
-            // already carries the compartment's shading.
-            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            // Inside a closed hull these can only shadow themselves.
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
             renderer.receiveShadows = true;
-            renderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.BlendProbes;
+            renderer.lightProbeUsage = LightProbeUsage.BlendProbes;
+            renderer.reflectionProbeUsage = ReflectionProbeUsage.Off;
 
-            // AarVisual is how GHPC says "this is only drawn in the x-ray view": it switches the renderer off
-            // unless the AAR camera is live and moves it onto the x-ray-only layer, which no ordinary camera
-            // draws. The compartment is built in the same frame as the exterior art and its armour modules
-            // reach the outer surface, so an unregistered node pokes through the hull with x-ray off. The
-            // mode is read inside Awake, hence the node going active only after the component is described.
             var xray = node.AddComponent<GHPC.AarVisual>();
             xray.RenderMode = GHPC.AarVisual.AarVisualRenderMode.XrayOnly;
             node.SetActive(true);
-            _xrayNodes++;
-            return mesh.vertexCount > 0 ? CountTriangles(mesh) : 0;
+            return built.Mesh.vertexCount > 0 ? CountTriangles(built.Mesh) : 0;
         }
 
         private static int CountTriangles(Mesh mesh)
@@ -301,66 +132,62 @@ namespace Leopard2A7V
             return total;
         }
 
-        private static Mesh Build(string bone, Vector3 anchor)
+        private static Built Build(string bone, Vector3 anchor)
         {
-            string key = bone + "|" + anchor;
             Mesh cached;
-            if (Meshes.TryGetValue(key, out cached)) return cached;
+            if (Meshes.TryGetValue(bone, out cached))
+                return new Built { Mesh = cached, Classes = Submeshes[bone] };
 
-            var positions = new List<Vector3>();
+            var vertices = new List<Vector3>();
             var normals = new List<Vector3>();
-            var submeshes = new Dictionary<string, List<int>>();
+            var triangles = new Dictionary<string, List<int>>();
             var order = new List<string>();
 
-            foreach (Part part in Parts)
+            foreach (LpXrayParts.Part part in LpXrayParts.Parts)
             {
-                if (!string.Equals(part.Bone, bone, StringComparison.OrdinalIgnoreCase)) continue;
-                string material = Palette.ContainsKey(part.Material) ? part.Material : "int_metal";
-                List<int> triangles;
-                if (!submeshes.TryGetValue(material, out triangles))
+                if (!string.Equals(part.Bone, bone, System.StringComparison.OrdinalIgnoreCase)) continue;
+                string cls = Palette.ContainsKey(part.Class) ? part.Class : "int_metal";
+                List<int> indices;
+                if (!triangles.TryGetValue(cls, out indices))
                 {
-                    triangles = new List<int>();
-                    submeshes.Add(material, triangles);
-                    order.Add(material);
+                    indices = new List<int>();
+                    triangles.Add(cls, indices);
+                    order.Add(cls);
                 }
 
-                int offset = positions.Count;
-                for (int i = 0; i < part.Positions.Count; i++)
+                int offset = vertices.Count;
+                for (int i = 0; i < part.Positions.Length; i++)
                 {
-                    positions.Add(part.Positions[i] - anchor);
+                    vertices.Add(part.Positions[i] - anchor);
                     normals.Add(part.Normals[i]);
                 }
-                for (int i = 0; i < part.Triangles.Count; i++)
-                    triangles.Add(part.Triangles[i] + offset);
+                for (int i = 0; i < part.Triangles.Length; i++)
+                    indices.Add(part.Triangles[i] + offset);
             }
 
-            if (positions.Count == 0) return null;
+            if (vertices.Count == 0 || order.Count == 0) return null;
 
             var mesh = new Mesh
             {
                 name = "L2A7V_Interior_" + bone,
-                indexFormat = UnityEngine.Rendering.IndexFormat.UInt32
+                indexFormat = vertices.Count > 65000 ? IndexFormat.UInt32 : IndexFormat.UInt16,
             };
-            mesh.SetVertices(positions);
+            mesh.SetVertices(vertices);
             mesh.SetNormals(normals);
-            mesh.SetUVs(0, new Vector2[positions.Count]);
             mesh.subMeshCount = order.Count;
             for (int i = 0; i < order.Count; i++)
-                mesh.SetTriangles(submeshes[order[i]], i);
+                mesh.SetTriangles(triangles[order[i]], i);
             mesh.RecalculateBounds();
             mesh.UploadMeshData(true);
 
-            _materialOrder = _materialOrder ?? new Dictionary<string, string[]>();
-            _materialOrder[mesh.name] = order.ToArray();
-            Meshes[key] = mesh;
-            MelonLogger.Msg($"[L2A7V] interior {bone}: {positions.Count} vertices / {CountTriangles(mesh)} triangle(s) " +
-                            $"in {order.Count} submesh(es): {string.Join(", ", order)}");
-            return mesh;
+            Meshes[bone] = mesh;
+            Submeshes[bone] = order;
+            return new Built { Mesh = mesh, Classes = order };
         }
 
         /// <summary>
-        /// Re-points the compartment materials at the shader the current mission loaded, for the same
-        /// reason LpAssets.RepairShader exists: the static cache outlives the vehicles bundle.
+        /// Re-points the compartment materials at the shader the current mission loaded, for the same reason
+        /// LpAssets.RepairShader exists: the static cache outlives the vehicles bundle.
         /// </summary>
         public static int RepairShader(Shader live)
         {
@@ -375,26 +202,24 @@ namespace Leopard2A7V
             return repaired;
         }
 
-        private static Dictionary<string, string[]> _materialOrder;
-
-        private static Material GetMaterial(string key)
+        private static Material GetMaterial(string cls)
         {
-            Material cached;
-            if (Materials.TryGetValue(key, out cached)) return cached;
+            Material material;
+            if (Materials.TryGetValue(cls, out material) && material != null)
+            {
+                // The cached clone can outlive the bundle that held its shader; the donor's fresh template
+                // revives it the same way the exterior materials are revived.
+                if (material.shader == null || material.shader.name == "Hidden/InternalErrorShader")
+                    material.shader = LpVisual.TemplateMaterial.shader;
+                return material;
+            }
 
-            string meshName = key.Substring(0, key.LastIndexOf('|'));
-            int index = int.Parse(key.Substring(key.LastIndexOf('|') + 1));
-            string[] order;
-            string name = _materialOrder != null && _materialOrder.TryGetValue(meshName, out order) &&
-                          index < order.Length ? order[index] : "int_metal";
-
-            Color32 albedo;
-            if (!Palette.TryGetValue(name, out albedo)) albedo = Palette["int_metal"];
+            Color32 color;
+            if (!Palette.TryGetValue(cls, out color)) color = new Color32(156, 158, 166, 255);
             byte gloss;
-            if (!Gloss.TryGetValue(name, out gloss)) gloss = 32;
-
-            Material material = LpAssets.CreateFlatMaterial("L2A7V interior " + name, albedo, gloss);
-            Materials[key] = material;
+            if (!Gloss.TryGetValue(cls, out gloss)) gloss = 30;
+            material = LpAssets.CreateFlatMaterial("L2A7V " + cls, color, gloss);
+            Materials[cls] = material;
             return material;
         }
     }

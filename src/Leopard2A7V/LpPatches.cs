@@ -137,18 +137,15 @@ namespace Leopard2A7V
             if (component == null) return;
             GameObject root = component.gameObject;
 
-            // The session's first spawn converts in place because no shader template exists yet, and every
-            // later one arrives as a clone of the converted template. Which passes run differs between the two,
-            // so the log has to say which path a given unit came in on.
-            MelonLogger.Msg($"[L2A7V] spawn '{root.name}' " + (root.GetComponent<LpSightView>() == null
-                ? "converts in place" : "arrived from the converted template"));
-
-            // The loadout fills its racks in Start, which has not run yet, so the clip swapped in here is
-            // the one the racks are built from rather than a correction applied afterwards.
-            LpWeapons.Apply(root);
-            LpWeapons.ApplyGunArc(root);
-            LpReticle.Apply(root.transform);
-            LpCommanderSight.Apply(root);
+            // This is a Harmony postfix on the game's own spawn call: anything thrown here unwinds into the
+            // spawner's caller and takes the rest of the mission's set-up with it. One such throw - a game
+            // getter called too early - was enough to produce "No units in platoon: 1st Plt", "no default
+            // unit determined" and a mission that could not be entered. So each step is isolated: a broken
+            // step costs that step, never the spawn.
+            Guard("weapons", root, () => LpWeapons.Apply(root));
+            Guard("gun arc", root, () => LpWeapons.ApplyGunArc(root));
+            Guard("reticle", root, () => LpReticle.Apply(root.transform));
+            Guard("commander's sight", root, () => LpCommanderSight.Apply(root));
 
             if (root.GetComponent<LpConvertBehaviour>() != null) return;
 
@@ -157,21 +154,27 @@ namespace Leopard2A7V
             if (UnitFriendlyName != null && isCustomUnit)
                 UnitFriendlyName.SetValue(__result, LpConfig.FriendlyName);
 
-            LpDonorArt.Request(root);
-            LpArmorLog.Apply(root);
-            // The donor's armour components are alive here - 220 uniform and 33 measured pieces at spawn -
-            // and the game tears the AAR root down while this spawn's conversion still runs (two seconds
-            // later the same search returns nothing). This is the only point in the flow that has them.
-            LpArmor.Apply(root);
-            if (!LpXrayArmor.Build(root)) LpArmorOwn.Build(root);
-            LpModules.Apply(root);
-            LpModulesOwn.Build(root);
-            LpHatches.Bind(root);
-            LpSmoke.Apply(root);
+            Guard("donor art watch", root, () => LpDonorArt.Request(root));
+            Guard("donor protection log", root, () => LpArmorLog.Apply(root));
+            Guard("modules", root, () => LpModulesOwn.Build(root));
+            Guard("hatches", root, () => LpHatches.Bind(root));
+            Guard("smoke", root, () => LpSmoke.Apply(root));
             // The pivots only have the artwork under them after the visual pass, so moving an axis here
             // would just offset a turret that is about to be parented. It runs from Convert instead.
-            root.AddComponent<LpConvertBehaviour>();
-            LpArmorDriver.Ensure();
+            Guard("conversion marker", root, () => root.AddComponent<LpConvertBehaviour>());
+        }
+
+        private static void Guard(string step, GameObject root, System.Action action)
+        {
+            try
+            {
+                action();
+            }
+            catch (System.Exception error)
+            {
+                MelonLogger.Warning("[L2A7V] " + step + " failed on '" + (root == null ? "?" : root.name) +
+                                    "'; the rest of the spawn carries on: " + error);
+            }
         }
     }
 
@@ -209,6 +212,10 @@ namespace Leopard2A7V
                 return;
             }
             if (!ObjModel.Loaded) return;
+            // The x-ray export is where the compartment and the added armour arrays come from, and it is the
+            // bigger of the two parses. Converting before it lands would build a vehicle with no interior and
+            // no arrays, and nothing retries that later - so the swap waits for it as well.
+            if (!LpXrayParts.Loaded && !LpXrayParts.Failed) return;
 
             LpBaseRig.SnapshotDonor(transform);   // before our art is added, so the guard can tell them apart
             if (LpVisual.Convert(gameObject) != null)
@@ -243,3 +250,4 @@ namespace Leopard2A7V
     }
 
 }
+

@@ -49,6 +49,12 @@ namespace Leopard2A7V
         /// </summary>
         public static bool Ensure(UnitSpawner spawner)
         {
+            // Off, and that is the L2A7HU mod's arrangement: it converts the game's own live LEO2A3 on every
+            // spawn instead of cloning a prefab. The difference is not cosmetic. A prefab clone has never run
+            // Awake or OnSpawn, so at conversion it carries no armour colliders, no crew and no module
+            // hitzones - which is why every templated vehicle here ended up with its added armour on a guessed
+            // layer and a damage model that only the game could fill in afterwards. A live unit has all of it.
+            if (!LpConfig.UseTemplate) return false;
             if (Current != null) return true;
             if (_gaveUp || spawner == null) return false;
 

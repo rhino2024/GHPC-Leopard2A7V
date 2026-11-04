@@ -110,11 +110,10 @@ namespace Leopard2A7V
                 if (!ShouldHide(renderer.transform, renderer.name)) continue;
                 StripGeometry(renderer);
                 renderer.enabled = false;
-                // The game's visibility pass can switch a renderer back on, so the transform is collapsed as
-                // well: a zero-scaled node draws nothing whatever happens to enabled.
-                if (renderer.GetComponentsInChildren<UniformArmor>(true).Length == 0 &&
-                    renderer.transform.localScale != Vector3.zero)
-                    renderer.transform.localScale = Vector3.zero;
+                // No scale collapse here. The geometry is already gone, which is what actually keeps the piece
+                // off screen; collapsing the transform was the older trick and it is not safe - the node it
+                // lands on can be a bone the running gear rides or the ancestor of the vehicle's colliders,
+                // and a zero-scaled one takes the wheels and the hit detection with it.
                 stripped++;
                 string path = PathOf(renderer.transform).ToLowerInvariant();
                 if (path.Contains("net") || path.Contains("camo") || path.Contains("marking")) netting++;
@@ -154,7 +153,7 @@ namespace Leopard2A7V
         /// there faults inside native code, which is what crashed the mission load. It gets a copy of its own
         /// mesh with every index buffer emptied instead.
         /// </summary>
-        private static void StripGeometry(Renderer renderer)
+        internal static void StripGeometry(Renderer renderer)
         {
             MeshFilter filter = renderer.GetComponent<MeshFilter>();
             if (filter != null && filter.sharedMesh != null) filter.sharedMesh = null;
@@ -166,15 +165,37 @@ namespace Leopard2A7V
         /// <summary>Meshes emptied of triangles, per donor mesh, so a unit never clones the same one twice.</summary>
         private static readonly Dictionary<Mesh, Mesh> EmptiedMeshes = new Dictionary<Mesh, Mesh>();
 
+        /// <summary>
+        /// A stand-in mesh with the donor's shape of nothing: same submesh count so the renderer's material
+        /// slots stay valid, same bounds so culling and behaviour that reads bounds keep working, no triangles.
+        ///
+        /// It is built empty rather than Instantiate()d from the donor's mesh, and that is the important part:
+        /// a copy of an unreadable mesh is itself unreadable, and the game then throws "Not allowed to access
+        /// triangles/indices on mesh '... (no faces)' (isReadable is false)" every time one of those passes
+        /// touches the running gear or the turret skin - 25 of those per spawn in the measured log, which is
+        /// exactly the kind of exception that leaves the after-action view half-drawn. A mesh created here is
+        /// readable by construction.
+        /// </summary>
         private static Mesh EmptiedCopy(Mesh source)
         {
             Mesh emptied;
             if (EmptiedMeshes.TryGetValue(source, out emptied) && emptied != null) return emptied;
 
-            var copy = UnityEngine.Object.Instantiate(source);
-            copy.name = source.name + " (no faces)";
-            var none = new int[0];
-            for (int i = 0; i < copy.subMeshCount; i++) copy.SetTriangles(none, i);
+            var copy = new Mesh { name = source.name + " (no faces)" };
+            try
+            {
+                copy.subMeshCount = source.subMeshCount;
+                var none = new int[0];
+                for (int i = 0; i < copy.subMeshCount; i++) copy.SetTriangles(none, i);
+                copy.bounds = source.bounds;
+            }
+            catch (Exception)
+            {
+                // A submesh table Unity refuses is not worth a crash: an empty one-submesh mesh still draws
+                // nothing, which is the whole job.
+                copy.subMeshCount = 1;
+                copy.SetTriangles(new int[0], 0);
+            }
             EmptiedMeshes[source] = copy;
             return copy;
         }

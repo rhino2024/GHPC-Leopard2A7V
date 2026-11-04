@@ -5,6 +5,14 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>Leopard2A7V</AssemblyName>
     <RootNamespace>Leopard2A7V</RootNamespace>
+    <!-- Stamped onto the DLL itself. Without this the assembly said 1.0.0.0 forever, so nothing reading the
+         file could tell which build it had. -->
+    <Version>0.2.0</Version>
+    <FileVersion>0.2.0</FileVersion>
+    <AssemblyVersion>0.2.0</AssemblyVersion>
+    <Product>Leopard 2A7V</Product>
+    <Company>rhino2024</Company>
+    <Description>Leopard 2A7V tank model swap for Gunner, HEAT, PC!</Description>
     <PlatformTarget>x64</PlatformTarget>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>

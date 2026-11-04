@@ -30,6 +30,15 @@ namespace Leopard2A7V
             internal int Layers;
         }
 
+        internal sealed class Module
+        {
+            internal string Name;
+            internal Vector3 Centre;
+            internal Vector3 Size;
+            internal float Health;
+            internal float Threshold;
+        }
+
         internal sealed class Hatch
         {
             internal string Group;
@@ -51,6 +60,17 @@ namespace Leopard2A7V
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         internal static readonly List<Hatch> Hatches = new List<Hatch>();
+
+        internal static readonly List<Module> Modules = new List<Module>();
+
+        internal struct Role
+        {
+            internal Color Albedo;
+            internal int Gloss;
+        }
+
+        internal static readonly Dictionary<string, Role> InteriorRoles =
+            new Dictionary<string, Role>(StringComparer.OrdinalIgnoreCase);
 
         internal static void Load()
         {
@@ -82,6 +102,8 @@ namespace Leopard2A7V
                             case "vanilla_off": ReadVanillaOff(f); break;
                             case "hatch": ReadHatch(f); break;
                             case "codex": ReadCodex(f); break;
+                            case "module": ReadModule(f); break;
+                            case "interior_role": ReadRole(f); break;
                             default: bad++; break;
                         }
                     }
@@ -97,7 +119,7 @@ namespace Leopard2A7V
                 return;
             }
 
-            MelonLogger.Msg(Tag + " loaded " + Armours.Count + " armour override(s), " + VanillaOff.Count +
+            MelonLogger.Msg(Tag + " loaded " + Armours.Count + " armour override(s), " + Modules.Count + " module(s), " + VanillaOff.Count +
                             " donor plate name(s) and " + Hatches.Count + " hatch hinge(s) from " + FileName +
                             (bad > 0 ? " (" + bad + " line(s) ignored of " + lines + ")" : string.Empty));
         }
@@ -112,6 +134,34 @@ namespace Leopard2A7V
                 Layers = Mathf.Clamp(Mathf.RoundToInt(Float(f[4])), 1, 6),
             };
             Armours[f[1].Trim()] = entry;
+        }
+
+        private static void ReadRole(string[] f)
+        {
+            if (f.Length < 3) return;
+            string[] rgb = f[2].Split(',');
+            if (rgb.Length != 3) return;
+            InteriorRoles[f[1].Trim()] = new Role
+            {
+                Albedo = new Color(Float(rgb[0]), Float(rgb[1]), Float(rgb[2]), 1f),
+                Gloss = f.Length > 3 ? Mathf.RoundToInt(Float(f[3])) : 32,
+            };
+        }
+
+        private static void ReadModule(string[] f)
+        {
+            if (f.Length < 6) return;
+            string[] centre = f[2].Split(',');
+            string[] size = f[3].Split(',');
+            if (centre.Length != 3 || size.Length != 3) return;
+            Modules.Add(new Module
+            {
+                Name = f[1].Trim(),
+                Centre = new Vector3(Float(centre[0]), Float(centre[1]), Float(centre[2])),
+                Size = new Vector3(Float(size[0]), Float(size[1]), Float(size[2])),
+                Health = Float(f[4]),
+                Threshold = f.Length > 5 ? Float(f[5]) : 25f,
+            });
         }
 
         private static void ReadCodex(string[] f)
@@ -181,6 +231,21 @@ namespace Leopard2A7V
             Load();
             string fragment;
             return CodexOverrides.TryGetValue(groupName, out fragment) ? fragment : null;
+        }
+
+        internal static bool TryRole(string name, out Color albedo, out int gloss)
+        {
+            Load();
+            Role role;
+            if (InteriorRoles.TryGetValue(name, out role))
+            {
+                albedo = role.Albedo;
+                gloss = role.Gloss;
+                return true;
+            }
+            albedo = Color.white;
+            gloss = 32;
+            return false;
         }
 
         internal static bool IsVanillaOff(string plateName)
