@@ -1,121 +1,131 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
-using GHPC;
 using MelonLoader;
 using UnityEngine;
+using UnityEngine.Rendering;
 
-namespace Leopard2A7V
+namespace Leopard2A7V;
+
+public static class LpHatchBundle
 {
-    /// <summary>
-    /// Loads the lids from their own asset bundle.
-    ///
-    /// The runtime OBJ pipeline merges every turret part into a single mesh, which is fine for the hull and the
-    /// turret but fatal for a lid: a merged lump cannot hinge. The lids are therefore baked into prefabs by the
-    /// Unity project (Tools → GHPC Armour → Build Hatch Bundle) and instantiated here, one object each, at the
-    /// same anchor the turret art uses. Without the bundle the pipeline keeps merging them and the lids simply
-    /// stay shut, which is what happened until now.
-    /// </summary>
-    public static class LpHatchBundle
-    {
-        private const string Tag = "[L2A7V][hatch-bundle]";
-        private const string BundleFile = "l2a7v_hatches.bundle";
-        private const string BundleName = "l2a7v_hatches";
+	private const string Tag = "[L2A7V][hatch-bundle]";
 
-        private static AssetBundle _bundle;
-        private static bool _tried;
+	private const string BundleFile = "l2a7v_hatches.bundle";
 
-        internal static bool Ready
-        {
-            get
-            {
-                Load();
-                return _bundle != null;
-            }
-        }
+	private const string BundleName = "l2a7v_hatches";
 
-        private static void Load()
-        {
-            if (_tried) return;
-            _tried = true;
+	private static AssetBundle _bundle;
 
-            string path = Path.Combine(LpXrayArmor.ModFolder, BundleFile);
-            if (!File.Exists(path))
-            {
-                MelonLogger.Msg(Tag + " no " + BundleFile + "; lids stay part of the turret mesh");
-                return;
-            }
+	private static bool _tried;
 
-            try
-            {
-                _bundle = AssetBundle.LoadFromFile(path);
-            }
-            catch (Exception error)
-            {
-                MelonLogger.Warning(Tag + " could not load " + BundleFile + ": " + error.Message);
-                return;
-            }
+	internal static bool Ready
+	{
+		get
+		{
+			Load();
+			return _bundle != null;
+		}
+	}
 
-            if (_bundle == null)
-            {
-                MelonLogger.Warning(Tag + " " + BundleFile + " did not load as a bundle");
-                return;
-            }
+	private static void Load()
+	{
+		if (_tried)
+		{
+			return;
+		}
+		_tried = true;
+		string path = Path.Combine(LpXrayArmor.ModFolder, "l2a7v_hatches.bundle");
+		if (!File.Exists(path))
+		{
+			MelonLogger.Msg("[L2A7V][hatch-bundle] no l2a7v_hatches.bundle; lids stay part of the turret mesh");
+			return;
+		}
+		try
+		{
+			_bundle = AssetBundle.LoadFromFile(path);
+		}
+		catch (Exception ex)
+		{
+			MelonLogger.Warning("[L2A7V][hatch-bundle] could not load l2a7v_hatches.bundle: " + ex.Message);
+			return;
+		}
+		if (_bundle == null)
+		{
+			MelonLogger.Warning("[L2A7V][hatch-bundle] l2a7v_hatches.bundle did not load as a bundle");
+		}
+		else
+		{
+			MelonLogger.Msg("[L2A7V][hatch-bundle] loaded l2a7v_hatches.bundle (" + _bundle.GetAllAssetNames().Length + " asset(s))");
+		}
+	}
 
-            MelonLogger.Msg(Tag + " loaded " + BundleFile + " (" + _bundle.GetAllAssetNames().Length +
-                            " asset(s))");
-        }
-
-        /// <summary>
-        /// Instantiates every lid under the turret pivot, in the anchor frame the turret art uses.
-        /// Returns the number of lids placed.
-        /// </summary>
-        internal static int Spawn(Transform turretPivot, Vector3 anchor, Material[] artMaterials)
-        {
-            if (!Ready || turretPivot == null) return 0;
-
-            int placed = 0;
-            foreach (string assetName in _bundle.GetAllAssetNames())
-            {
-                if (!assetName.EndsWith(".prefab", StringComparison.OrdinalIgnoreCase)) continue;
-                string lid = Path.GetFileNameWithoutExtension(assetName);
-                if (!lid.StartsWith("hatch_", StringComparison.OrdinalIgnoreCase)) continue;
-                if (turretPivot.Find(lid) != null) continue;
-
-                GameObject prefab = null;
-                try { prefab = _bundle.LoadAsset<GameObject>(assetName); }
-                catch (Exception) { }
-                if (prefab == null) continue;
-
-                var instance = UnityEngine.Object.Instantiate(prefab, turretPivot, false);
-                instance.name = lid;
-                instance.transform.localPosition = anchor;
-                instance.transform.localRotation = Quaternion.identity;
-                instance.transform.localScale = Vector3.one;
-                int renderers = 0;
-                foreach (Renderer renderer in instance.GetComponentsInChildren<Renderer>(true))
-                {
-                    if (renderer == null) continue;
-                    renderers++;
-                    // The prefab carries no materials: it is geometry only, and an untextured renderer draws
-                    // as a white block. The lid is cut from the same atlas as the turret, so the turret's own
-                    // materials are the right ones.
-                    if (artMaterials != null && artMaterials.Length > 0)
-                    {
-                        var owned = new Material[Mathf.Max(1, renderer.sharedMaterials.Length)];
-                        for (int i = 0; i < owned.Length; i++)
-                            owned[i] = artMaterials[Mathf.Min(i, artMaterials.Length - 1)];
-                        renderer.sharedMaterials = owned;
-                    }
-                    renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                }
-                if (renderers == 0) MelonLogger.Warning(Tag + " lid '" + lid + "' has no renderer");
-                else if (placed >= 0) MelonLogger.Msg(Tag + " lid '" + lid + "' spawned (" + renderers + " renderer(s))");
-                placed++;
-            }
-
-            MelonLogger.Msg(Tag + " placed " + placed + " lid(s) on the turret");
-            return placed;
-        }
-    }
+	internal static int Spawn(Transform turretPivot, Vector3 anchor, Material[] artMaterials)
+	{
+		if (!Ready || turretPivot == null)
+		{
+			return 0;
+		}
+		int num = 0;
+		string[] allAssetNames = _bundle.GetAllAssetNames();
+		foreach (string text in allAssetNames)
+		{
+			if (!text.EndsWith(".prefab", StringComparison.OrdinalIgnoreCase))
+			{
+				continue;
+			}
+			string fileNameWithoutExtension = Path.GetFileNameWithoutExtension(text);
+			if (!fileNameWithoutExtension.StartsWith("hatch_", StringComparison.OrdinalIgnoreCase) || turretPivot.Find(fileNameWithoutExtension) != null)
+			{
+				continue;
+			}
+			GameObject gameObject = null;
+			try
+			{
+				gameObject = _bundle.LoadAsset<GameObject>(text);
+			}
+			catch (Exception)
+			{
+			}
+			if (gameObject == null)
+			{
+				continue;
+			}
+			GameObject gameObject2 = UnityEngine.Object.Instantiate(gameObject, turretPivot, worldPositionStays: false);
+			gameObject2.name = fileNameWithoutExtension;
+			gameObject2.transform.localPosition = anchor;
+			gameObject2.transform.localRotation = Quaternion.identity;
+			gameObject2.transform.localScale = Vector3.one;
+			int num2 = 0;
+			Renderer[] componentsInChildren = gameObject2.GetComponentsInChildren<Renderer>(includeInactive: true);
+			foreach (Renderer renderer in componentsInChildren)
+			{
+				if (renderer == null)
+				{
+					continue;
+				}
+				num2++;
+				if (artMaterials != null && artMaterials.Length != 0)
+				{
+					Material[] array = new Material[Mathf.Max(1, renderer.sharedMaterials.Length)];
+					for (int k = 0; k < array.Length; k++)
+					{
+						array[k] = artMaterials[Mathf.Min(k, artMaterials.Length - 1)];
+					}
+					renderer.sharedMaterials = array;
+				}
+				renderer.shadowCastingMode = ShadowCastingMode.Off;
+			}
+			if (num2 == 0)
+			{
+				MelonLogger.Warning("[L2A7V][hatch-bundle] lid '" + fileNameWithoutExtension + "' has no renderer");
+			}
+			else if (num >= 0)
+			{
+				MelonLogger.Msg("[L2A7V][hatch-bundle] lid '" + fileNameWithoutExtension + "' spawned (" + num2 + " renderer(s))");
+			}
+			num++;
+		}
+		MelonLogger.Msg("[L2A7V][hatch-bundle] placed " + num + " lid(s) on the turret");
+		return num;
+	}
 }

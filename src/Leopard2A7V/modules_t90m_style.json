@@ -1,0 +1,108 @@
+{
+  "coordinate_space": "leo2_rig export: +X forward, +Y up, +Z right. Conversion is performed once by the builder.",
+  "modules": [
+    {
+      "id": "powerpack_engine", "kind": "engine", "name": "2A7V MB873 powerpack", "group": "Hull",
+      "parts": ["engine_xray"], "health": 200, "threshold": 25, "pressure": 0.5,
+      "replaces": ["engine"], "hooks": [{"hook": "ChassisDamageManager.EngineHitZone"}], "status": "Engine powerpack destroyed"
+    },
+    {
+      "id": "transmission", "kind": "transmission", "name": "2A7V transmission", "group": "Hull",
+      "parts": ["transmission_xray"], "health": 160, "threshold": 25, "pressure": 0.5,
+      "replaces": ["transmission"], "hooks": [{"hook": "ChassisDamageManager.TransmissionHitZone"}], "status": "Transmission destroyed"
+    },
+    {
+      "id": "radiator", "kind": "radiator", "name": "2A7V cooling radiators", "group": "Hull",
+      "parts": ["radiator_xray"], "health": 100, "threshold": 20, "pressure": 0.5,
+      "replaces": ["radiator"], "hooks": [{"hook": "ChassisDamageManager.RadiatorHitZone"}], "status": "Engine cooling radiators destroyed"
+    },
+    {
+      "id": "gun_breech", "kind": "breech", "name": "2A7V L55 breech", "group": "Gun",
+      "parts": ["cannon_breech_xray"], "health": 120, "threshold": 25, "pressure": 0.5,
+      "replaces": ["gun breech"], "hooks": [{"hook": "WeaponSystem.BreechHitZone", "target": "main"}], "status": "Main gun breech destroyed"
+    },
+    {
+      "id": "gun_barrel", "kind": "barrel", "name": "2A7V L55 barrel", "group": "Gun",
+      "parts": ["gun_barrel_01_xray"], "health": 120, "threshold": 25, "pressure": 0.5,
+      "replaces": ["gun barrel"], "hooks": [{"hook": "WeaponSystem.BarrelHitZone", "target": "main"}], "status": "Main gun barrel destroyed"
+    },
+    {
+      "id": "gunner_optics", "kind": "gunner_sight", "name": "2A7V gunner primary optics", "group": "Turret",
+      "parts": ["optic_gun_xray", "optic_turret_03_xray"], "health": 60, "threshold": 15, "pressure": 0.5,
+      "replaces": ["gunner's sight"], "hooks": [
+        {"hook": "CameraSlot.HitZone", "target": "gunner_day"}, {"hook": "CameraSlot.HitZone", "target": "gunner_night"},
+        {"hook": "FireControlSystem.LaserComponent", "target": "main"}
+      ], "status": "Gunner sight and laser rangefinder destroyed"
+    },
+    {
+      "id": "fcs_computer", "kind": "computer", "name": "2A7V fire-control computer", "group": "Turret",
+      "parts": ["fire_control_system_xray"], "health": 80, "threshold": 20, "pressure": 0.5,
+      "replaces": ["firing computer"], "hooks": [{"hook": "FireControlSystem.ComputerComponent", "target": "main"}], "status": "Fire-control computer destroyed"
+    },
+    {
+      "id": "turret_drive", "kind": "traverse", "name": "2A7V turret traverse mechanism", "group": "Turret",
+      "parts": ["drive_turret_h_xray"], "health": 120, "threshold": 25, "pressure": 0.5,
+      "replaces": ["traverse drive"], "hooks": [{"hook": "AimablePlatform.HitZones", "target": "turret"}], "status": "Turret traverse mechanism destroyed"
+    },
+    {
+      "id": "turret_hydraulics", "kind": "hydraulics", "name": "2A7V turret hydraulic system", "group": "Turret",
+      "parts": ["turret_hydraulics_xray"], "health": 100, "threshold": 20, "pressure": 0.5,
+      "replaces": ["hydraulic system"], "hooks": [{"hook": "AimablePlatform.HitZones", "target": "turret"}], "status": "Turret hydraulic system destroyed"
+    },
+    {
+      "id": "traverse_power", "kind": "power_drive", "name": "2A7V turret ring power drive", "group": "Turret",
+      "parts": [], "boxes": [{"c": [0.4068, 1.1088, -0.0062], "s": [1.6, 0.28, 1.6]}],
+      "health": 80, "threshold": 20, "pressure": 0.5, "replaces": ["turret ring"],
+      "hooks": [{"hook": "Module.PowerDrive", "target": "turret"}], "status": "Powered turret traverse unavailable"
+    },
+    {
+      "id": "elevation_drive", "kind": "elevation", "name": "2A7V gun elevation drive", "group": "Turret",
+      "parts": ["drive_turret_v_xray"], "health": 100, "threshold": 20, "pressure": 0.5,
+      "replaces": ["gun elevation drive"], "hooks": [
+        {"hook": "AimablePlatform.HitZones", "target": "gun"}, {"hook": "Module.PowerDrive", "target": "gun"}
+      ], "status": "Gun elevation drive destroyed"
+    },
+    {
+      "id": "traverse_backup", "kind": "hand_drive", "name": "2A7V manual traverse mechanism", "group": "Turret",
+      "parts": [], "boxes": [{"c": [0.85, 1.38, -0.08], "s": [0.45, 0.3, 0.4]}],
+      "health": 50, "threshold": 15, "pressure": 0.5, "replaces": [],
+      "hooks": [{"hook": "Module.HandDrive", "target": "turret"}], "status": "Manual turret traverse unavailable"
+    },
+    {
+      "id": "stabiliser", "kind": "stabiliser", "name": "2A7V stabilisation controls", "group": "Turret",
+      "parts": [], "boxes": [{"c": [-0.75, 1.75, 0.52], "s": [0.35, 0.3, 0.3]}],
+      "health": 50, "threshold": 15, "pressure": 0.5, "replaces": [],
+      "hooks": [{"hook": "Module.Stabiliser", "target": "main"}], "status": "Gun stabilisation unavailable"
+    },
+    {
+      "id": "radio", "kind": "radio", "name": "2A7V radio station", "group": "Turret",
+      "parts": ["radio_station_xray"], "health": 40, "threshold": 10, "pressure": 0.5,
+      "replaces": ["radio"], "hooks": [{"hook": "Radio._radioDestructible", "target": "unit"}], "status": "Radio station destroyed"
+    },
+    {
+      "id": "hull_ammunition", "kind": "ammunition", "name": "2A7V hull ammunition rack", "group": "Hull",
+      "parts": ["ammo_rack_body_xray"], "health": 120, "threshold": 25, "pressure": 0.5,
+      "replaces": [], "rack": "hull", "hooks": [{"hook": "Module.AmmoRack", "target": "hull"}], "status": "Hull ammunition rack destroyed"
+    },
+    {
+      "id": "ready_ammunition", "kind": "ammunition", "name": "2A7V turret ready rack", "group": "Turret",
+      "parts": ["ammo_rack_turret_xray"], "health": 100, "threshold": 25, "pressure": 0.5,
+      "replaces": [], "rack": "turret", "hooks": [{"hook": "Module.AmmoRack", "target": "turret"}], "status": "Turret ready ammunition rack destroyed"
+    },
+    {
+      "id": "power_distribution", "kind": "report_only", "name": "2A7V power distribution", "group": "Hull",
+      "parts": ["power_system_xray"], "health": 100, "threshold": 20, "pressure": 0.5,
+      "replaces": [], "hooks": [], "status": "Power distribution system damaged (native effect not assigned)"
+    },
+    {
+      "id": "driver_controls", "kind": "report_only", "name": "2A7V driver controls", "group": "Hull",
+      "parts": ["driver_controls_xray"], "health": 60, "threshold": 15, "pressure": 0.5,
+      "replaces": [], "hooks": [], "status": "Driver controls damaged (native effect not assigned)"
+    },
+    {
+      "id": "commander_optics", "kind": "report_only", "name": "2A7V commander panoramic sight", "group": "Turret",
+      "parts": ["commander_panoramic_sight_xray"], "health": 60, "threshold": 15, "pressure": 0.5,
+      "replaces": [], "hooks": [], "status": "Commander panoramic sight damaged (CITV linkage pending validation)"
+    }
+  ]
+}

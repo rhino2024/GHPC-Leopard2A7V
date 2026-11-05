@@ -1,0 +1,39 @@
+﻿# Piece|Group|Mode|KE mm RHA|CE mm RHA|AngleMatters|Material|Exact donor replacement|Display name|Source
+# These are inherited L2A7V authoring assumptions, not T90M data or measured real-world equivalence.
+# Source Geometry comes from Leopard2A7V.obj; Source Xray uses the original export space and is converted once.
+ex_armor_l_17|Turret|uniform|880|1500|1|turret front array|-|L2A7V turret front module left|Geometry; retained L2A7V values
+ex_armor_r_17|Turret|uniform|880|1500|1|turret front array|-|L2A7V turret front module right|Geometry; retained L2A7V values
+ex_armor_l_18|Turret|uniform|460|800|1|turret side array|-|L2A7V turret side module left|Geometry; retained L2A7V values
+ex_armor_r_18|Turret|uniform|460|800|1|turret side array|-|L2A7V turret side module right|Geometry; retained L2A7V values
+ex_armor_body_01|Hull|uniform|360|720|1|hull array|upper front plate|L2A7V upper glacis add-on 01|Geometry; replaces only the named donor upper front plate
+ex_armor_body_03|Hull|uniform|360|720|1|hull array|upper front plate|L2A7V upper glacis add-on 03|Geometry; same explicit donor replacement
+ex_armor_body_04|Hull|uniform|360|720|1|hull array|upper front plate|L2A7V upper glacis add-on 04|Geometry; same explicit donor replacement
+ex_armor_body_05|Hull|uniform|360|720|1|hull array|upper front plate|L2A7V upper glacis add-on 05|Geometry; same explicit donor replacement
+ex_armor_body_06|Hull|uniform|360|720|1|hull array|upper front plate|L2A7V upper glacis add-on 06|Geometry; same explicit donor replacement
+ex_armor_body_07|Hull|uniform|360|720|1|hull array|upper front plate|L2A7V upper glacis add-on 07|Geometry; same explicit donor replacement
+composite_armor_hull_01_xray|Hull|uniform|360|720|1|hull array|lower front plate|L2A7V lower glacis array|Xray; retained L2A7V lower glacis values
+composite_armor_hull_02_xray|Hull|uniform|150|150|1|hull array|hull roof front|L2A7V forward hull deck|Xray; explicit deck replacement
+composite_armor_hull_03_xray|Hull|uniform|120|250|1|composite skirts|skirt left|L2A7V forward side strake|Xray; explicit skirt replacement
+composite_armor_hull_05_xray|Hull|uniform|120|250|1|composite skirts|skirt right|L2A7V side skirt array|Xray; explicit skirt replacement
+composite_armor_hull_04_xray|Hull|composite|50|70|1|armour steel|firewall|L2A7V engine firewall|Xray; closed convex shape only
+composite_armor_turret_01_xray|Turret|uniform|640|1120|1|turret front array|cheek array left A|L2A7V left cheek array|Xray; retained asymmetric L2A7V authoring values
+composite_armor_turret_02_xray|Turret|uniform|320|560|1|turret front array|cheek array right A|L2A7V right cheek array A|Xray; retained asymmetric L2A7V authoring values
+composite_armor_turret_03_xray|Turret|uniform|320|560|1|turret front array|cheek array right B|L2A7V right cheek array B|Xray; retained asymmetric L2A7V authoring values
+composite_armor_turret_04_xray|Turret|uniform|260|340|1|turret side array|array left|L2A7V turret flank array|Xray; retained L2A7V flank values
+composite_armor_turret_05_xray|Turret|composite|250|400|1|armour steel|turret rear right|L2A7V turret rear structure|Xray; closed convex structure only
+composite_armor_turret_06_xray|Turret|uniform|250|400|1|turret side array|bustle armour|L2A7V turret bustle array|Xray; retained L2A7V rear values
+composite_armor_turret_08_xray|Turret|composite|250|400|1|armour steel|bustle rear|L2A7V bustle rear plate|Xray; closed convex shape only
+composite_armor_turret_09_xray|Turret|uniform|250|400|1|turret side array|-|L2A7V turret side structure 09|Xray; donor relationship unconfirmed, retained donor plate
+composite_armor_turret_10_xray|Turret|uniform|350|700|1|mantlet|mantlet|L2A7V mantlet array|Xray; retained L2A7V mantlet values
+composite_armor_turret_11_xray|Turret|uniform|250|400|1|turret side array|sight front armour|L2A7V gun sight surround|Xray; explicit sight surround replacement
+firewall_armor_01_xray|Turret|composite|30|60|1|armour steel|hydraulic compartment inner wall|L2A7V turret firewall|Xray; retained firewall values
+firewall_armor_02_xray|Turret|composite|30|60|1|armour steel|-|L2A7V firewall upper lip|Xray; no confirmed donor counterpart
+spall_liner_01_xray|Turret|drawn|0|0|0|liner|-|L2A7V turret liner 01|Xray visual; no artificial stacked RHA
+spall_liner_02_xray|Turret|drawn|0|0|0|liner|-|L2A7V turret liner 02|Xray visual; no artificial stacked RHA
+spall_liner_03_xray|Turret|drawn|0|0|0|liner|-|L2A7V turret liner 03|Xray visual; no artificial stacked RHA
+spall_liner_04_xray|Turret|drawn|0|0|0|liner|-|L2A7V turret roof liner|Xray visual; no artificial stacked RHA
+spall_liner_05_xray|Turret|drawn|0|0|0|liner|-|L2A7V turret rear liner|Xray visual; no artificial stacked RHA
+spall_liner_06_xray|Hull|drawn|0|0|0|liner|-|L2A7V hull liner left|Xray visual; no artificial stacked RHA
+spall_liner_07_xray|Hull|drawn|0|0|0|liner|-|L2A7V hull liner right|Xray visual; no artificial stacked RHA
+spall_liner_08_xray|Hull|drawn|0|0|0|liner|-|L2A7V hull forward liner|Xray visual; no artificial stacked RHA
+spall_liner_09_xray|Hull|drawn|0|0|0|liner|-|L2A7V driver liner|Xray visual; no artificial stacked RHA

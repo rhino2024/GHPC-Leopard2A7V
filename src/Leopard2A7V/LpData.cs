@@ -5,269 +5,318 @@ using System.IO;
 using MelonLoader;
 using UnityEngine;
 
-namespace Leopard2A7V
+namespace Leopard2A7V;
+
+public static class LpData
 {
-    /// <summary>
-    /// The mod's data table, in the format the T-90M mod uses: one line per entry, pipe separated, sections
-    /// opened by the first field. Keeping the numbers in a text file means armour values, the list of donor
-    /// plates to switch off and the hatch hinges can be tuned without a rebuild.
-    ///
-    ///   armour|composite_armor_hull_01_xray|560|1100|3
-    ///   vanilla_off|Upper Front Plate
-    ///   hatch|hatch_03|commander|0,1,0|95|0.45,2.55,-0.11
-    ///
-    /// Missing file, missing section or a bad line is not fatal: the built-in defaults stay in force.
-    /// </summary>
-    public static class LpData
-    {
-        private const string Tag = "[L2A7V][data]";
-        private const string FileName = "L2A7V_data.txt";
+	internal sealed class Armour
+	{
+		internal float Ke;
 
-        internal sealed class Armour
-        {
-            internal float Ke;
-            internal float Ce;
-            internal int Layers;
-        }
+		internal float Ce;
 
-        internal sealed class Module
-        {
-            internal string Name;
-            internal Vector3 Centre;
-            internal Vector3 Size;
-            internal float Health;
-            internal float Threshold;
-        }
+		internal int Layers;
+	}
 
-        internal sealed class Hatch
-        {
-            internal string Group;
-            internal string Role;
-            internal Vector3 Axis = Vector3.up;
-            internal float Degrees = 95f;
-            internal Vector3 Hinge;
-            internal bool HasHinge;
-        }
+	internal sealed class Module
+	{
+		internal string Name;
 
-        private static bool _loaded;
+		internal Vector3 Centre;
 
-        internal static readonly Dictionary<string, Armour> Armours =
-            new Dictionary<string, Armour>(StringComparer.OrdinalIgnoreCase);
+		internal Vector3 Size;
 
-        internal static readonly List<string> VanillaOff = new List<string>();
+		internal float Health;
 
-        internal static readonly Dictionary<string, string> CodexOverrides =
-            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		internal float Threshold;
+	}
 
-        internal static readonly List<Hatch> Hatches = new List<Hatch>();
+	internal sealed class Hatch
+	{
+		internal string Group;
 
-        internal static readonly List<Module> Modules = new List<Module>();
+		internal string Role;
 
-        internal struct Role
-        {
-            internal Color Albedo;
-            internal int Gloss;
-        }
+		internal Vector3 Axis = Vector3.up;
 
-        internal static readonly Dictionary<string, Role> InteriorRoles =
-            new Dictionary<string, Role>(StringComparer.OrdinalIgnoreCase);
+		internal float Degrees = 95f;
 
-        internal static void Load()
-        {
-            if (_loaded) return;
-            _loaded = true;
+		internal Vector3 Hinge;
 
-            string path = Path.Combine(LpXrayArmor.ModFolder, FileName);
-            if (!File.Exists(path))
-            {
-                MelonLogger.Msg(Tag + " no " + FileName + "; using the built-in numbers");
-                return;
-            }
+		internal bool HasHinge;
+	}
 
-            int bad = 0, lines = 0;
-            try
-            {
-                foreach (string raw in File.ReadAllLines(path))
-                {
-                    string line = raw.Trim();
-                    if (line.Length == 0 || line[0] == '#') continue;
-                    lines++;
-                    string[] f = line.Split('|');
-                    string section = f[0].Trim().ToLowerInvariant();
-                    try
-                    {
-                        switch (section)
-                        {
-                            case "armour": ReadArmour(f); break;
-                            case "vanilla_off": ReadVanillaOff(f); break;
-                            case "hatch": ReadHatch(f); break;
-                            case "codex": ReadCodex(f); break;
-                            case "module": ReadModule(f); break;
-                            case "interior_role": ReadRole(f); break;
-                            default: bad++; break;
-                        }
-                    }
-                    catch (Exception)
-                    {
-                        bad++;
-                    }
-                }
-            }
-            catch (Exception error)
-            {
-                MelonLogger.Warning(Tag + " could not read " + FileName + ": " + error.Message);
-                return;
-            }
+	internal struct Role
+	{
+		internal Color Albedo;
 
-            MelonLogger.Msg(Tag + " loaded " + Armours.Count + " armour override(s), " + Modules.Count + " module(s), " + VanillaOff.Count +
-                            " donor plate name(s) and " + Hatches.Count + " hatch hinge(s) from " + FileName +
-                            (bad > 0 ? " (" + bad + " line(s) ignored of " + lines + ")" : string.Empty));
-        }
+		internal int Gloss;
+	}
 
-        private static void ReadArmour(string[] f)
-        {
-            if (f.Length < 5) return;
-            var entry = new Armour
-            {
-                Ke = Float(f[2]),
-                Ce = Float(f[3]),
-                Layers = Mathf.Clamp(Mathf.RoundToInt(Float(f[4])), 1, 6),
-            };
-            Armours[f[1].Trim()] = entry;
-        }
+	private const string Tag = "[L2A7V][data]";
 
-        private static void ReadRole(string[] f)
-        {
-            if (f.Length < 3) return;
-            string[] rgb = f[2].Split(',');
-            if (rgb.Length != 3) return;
-            InteriorRoles[f[1].Trim()] = new Role
-            {
-                Albedo = new Color(Float(rgb[0]), Float(rgb[1]), Float(rgb[2]), 1f),
-                Gloss = f.Length > 3 ? Mathf.RoundToInt(Float(f[3])) : 32,
-            };
-        }
+	private const string FileName = "L2A7V_data.txt";
 
-        private static void ReadModule(string[] f)
-        {
-            if (f.Length < 6) return;
-            string[] centre = f[2].Split(',');
-            string[] size = f[3].Split(',');
-            if (centre.Length != 3 || size.Length != 3) return;
-            Modules.Add(new Module
-            {
-                Name = f[1].Trim(),
-                Centre = new Vector3(Float(centre[0]), Float(centre[1]), Float(centre[2])),
-                Size = new Vector3(Float(size[0]), Float(size[1]), Float(size[2])),
-                Health = Float(f[4]),
-                Threshold = f.Length > 5 ? Float(f[5]) : 25f,
-            });
-        }
+	private static bool _loaded;
 
-        private static void ReadCodex(string[] f)
-        {
-            if (f.Length < 3) return;
-            CodexOverrides[f[1].Trim()] = f[2].Trim();
-        }
+	internal static readonly Dictionary<string, Armour> Armours = new Dictionary<string, Armour>(StringComparer.OrdinalIgnoreCase);
 
-        private static void ReadVanillaOff(string[] f)
-        {
-            if (f.Length < 2) return;
-            string name = f[1].Trim();
-            if (name.Length > 0) VanillaOff.Add(name);
-        }
+	internal static readonly List<string> VanillaOff = new List<string>();
 
-        private static void ReadHatch(string[] f)
-        {
-            if (f.Length < 4) return;
-            var hatch = new Hatch
-            {
-                Group = f[1].Trim(),
-                Role = f[2].Trim(),
-            };
-            string[] axis = f[3].Split(',');
-            if (axis.Length == 3)
-            {
-                var vector = new Vector3(Float(axis[0]), Float(axis[1]), Float(axis[2]));
-                if (vector.sqrMagnitude > 0.0001f) hatch.Axis = vector.normalized;
-            }
-            if (f.Length > 4) hatch.Degrees = Float(f[4]);
-            if (f.Length > 5)
-            {
-                string[] hinge = f[5].Split(',');
-                if (hinge.Length == 3)
-                {
-                    hatch.Hinge = new Vector3(Float(hinge[0]), Float(hinge[1]), Float(hinge[2]));
-                    hatch.HasHinge = true;
-                }
-            }
-            Hatches.Add(hatch);
-        }
+	internal static readonly Dictionary<string, string> CodexOverrides = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        private static float Float(string text)
-        {
-            return float.Parse(text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture);
-        }
+	internal static readonly List<Hatch> Hatches = new List<Hatch>();
 
-        internal static bool TryArmour(string groupName, out float ke, out float ce, out int layers)
-        {
-            Load();
-            Armour entry;
-            if (Armours.TryGetValue(groupName, out entry))
-            {
-                ke = entry.Ke;
-                ce = entry.Ce;
-                layers = entry.Layers;
-                return true;
-            }
-            ke = ce = 0f;
-            layers = 0;
-            return false;
-        }
+	internal static readonly List<Module> Modules = new List<Module>();
 
-        /// <summary>The codex name fragment the table assigns to this group, if any.</summary>
-        internal static string CodexFor(string groupName)
-        {
-            Load();
-            string fragment;
-            return CodexOverrides.TryGetValue(groupName, out fragment) ? fragment : null;
-        }
+	internal static readonly Dictionary<string, Role> InteriorRoles = new Dictionary<string, Role>(StringComparer.OrdinalIgnoreCase);
 
-        internal static bool TryRole(string name, out Color albedo, out int gloss)
-        {
-            Load();
-            Role role;
-            if (InteriorRoles.TryGetValue(name, out role))
-            {
-                albedo = role.Albedo;
-                gloss = role.Gloss;
-                return true;
-            }
-            albedo = Color.white;
-            gloss = 32;
-            return false;
-        }
+	internal static void Load()
+	{
+		if (_loaded)
+		{
+			return;
+		}
+		_loaded = true;
+		string path = Path.Combine(LpXrayArmor.ModFolder, "L2A7V_data.txt");
+		if (!File.Exists(path))
+		{
+			MelonLogger.Msg("[L2A7V][data] no L2A7V_data.txt; using the built-in numbers");
+			return;
+		}
+		int num = 0;
+		int num2 = 0;
+		try
+		{
+			string[] array = File.ReadAllLines(path);
+			for (int i = 0; i < array.Length; i++)
+			{
+				string text = array[i].Trim();
+				if (text.Length == 0 || text[0] == '#')
+				{
+					continue;
+				}
+				num2++;
+				string[] array2 = text.Split(new char[1] { '|' });
+				string text2 = array2[0].Trim().ToLowerInvariant();
+				try
+				{
+					switch (text2)
+					{
+					case "armour":
+						ReadArmour(array2);
+						break;
+					case "vanilla_off":
+						ReadVanillaOff(array2);
+						break;
+					case "hatch":
+						ReadHatch(array2);
+						break;
+					case "codex":
+						ReadCodex(array2);
+						break;
+					case "module":
+						ReadModule(array2);
+						break;
+					case "interior_role":
+						ReadRole(array2);
+						break;
+					default:
+						num++;
+						break;
+					}
+				}
+				catch (Exception)
+				{
+					num++;
+				}
+			}
+		}
+		catch (Exception ex2)
+		{
+			MelonLogger.Warning("[L2A7V][data] could not read L2A7V_data.txt: " + ex2.Message);
+			return;
+		}
+		MelonLogger.Msg("[L2A7V][data] loaded " + Armours.Count + " armour override(s), " + Modules.Count + " module(s), " + VanillaOff.Count + " donor plate name(s) and " + Hatches.Count + " hatch hinge(s) from L2A7V_data.txt" + ((num > 0) ? (" (" + num + " line(s) ignored of " + num2 + ")") : string.Empty));
+	}
 
-        internal static bool IsVanillaOff(string plateName)
-        {
-            Load();
-            foreach (string name in VanillaOff)
-                if (plateName.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0)
-                    return true;
-            return false;
-        }
+	private static void ReadArmour(string[] f)
+	{
+		if (f.Length >= 5)
+		{
+			Armour value = new Armour
+			{
+				Ke = Float(f[2]),
+				Ce = Float(f[3]),
+				Layers = Mathf.Clamp(Mathf.RoundToInt(Float(f[4])), 1, 6)
+			};
+			Armours[f[1].Trim()] = value;
+		}
+	}
 
-        internal static Hatch HatchFor(string groupName, string role)
-        {
-            Load();
-            foreach (Hatch hatch in Hatches)
-            {
-                if (hatch.Group.Equals(groupName, StringComparison.OrdinalIgnoreCase)) return hatch;
-                if (!string.IsNullOrEmpty(role) &&
-                    hatch.Role.Equals(role, StringComparison.OrdinalIgnoreCase) && hatch.Group.Length == 0)
-                    return hatch;
-            }
-            return null;
-        }
-    }
+	private static void ReadRole(string[] f)
+	{
+		if (f.Length >= 3)
+		{
+			string[] array = f[2].Split(new char[1] { ',' });
+			if (array.Length == 3)
+			{
+				InteriorRoles[f[1].Trim()] = new Role
+				{
+					Albedo = new Color(Float(array[0]), Float(array[1]), Float(array[2]), 1f),
+					Gloss = ((f.Length > 3) ? Mathf.RoundToInt(Float(f[3])) : 32)
+				};
+			}
+		}
+	}
+
+	private static void ReadModule(string[] f)
+	{
+		if (f.Length >= 6)
+		{
+			string[] array = f[2].Split(new char[1] { ',' });
+			string[] array2 = f[3].Split(new char[1] { ',' });
+			if (array.Length == 3 && array2.Length == 3)
+			{
+				Modules.Add(new Module
+				{
+					Name = f[1].Trim(),
+					Centre = new Vector3(Float(array[0]), Float(array[1]), Float(array[2])),
+					Size = new Vector3(Float(array2[0]), Float(array2[1]), Float(array2[2])),
+					Health = Float(f[4]),
+					Threshold = ((f.Length > 5) ? Float(f[5]) : 25f)
+				});
+			}
+		}
+	}
+
+	private static void ReadCodex(string[] f)
+	{
+		if (f.Length >= 3)
+		{
+			CodexOverrides[f[1].Trim()] = f[2].Trim();
+		}
+	}
+
+	private static void ReadVanillaOff(string[] f)
+	{
+		if (f.Length >= 2)
+		{
+			string text = f[1].Trim();
+			if (text.Length > 0)
+			{
+				VanillaOff.Add(text);
+			}
+		}
+	}
+
+	private static void ReadHatch(string[] f)
+	{
+		if (f.Length < 4)
+		{
+			return;
+		}
+		Hatch hatch = new Hatch
+		{
+			Group = f[1].Trim(),
+			Role = f[2].Trim()
+		};
+		string[] array = f[3].Split(new char[1] { ',' });
+		if (array.Length == 3)
+		{
+			Vector3 vector = new Vector3(Float(array[0]), Float(array[1]), Float(array[2]));
+			if (vector.sqrMagnitude > 0.0001f)
+			{
+				hatch.Axis = vector.normalized;
+			}
+		}
+		if (f.Length > 4)
+		{
+			hatch.Degrees = Float(f[4]);
+		}
+		if (f.Length > 5)
+		{
+			string[] array2 = f[5].Split(new char[1] { ',' });
+			if (array2.Length == 3)
+			{
+				hatch.Hinge = new Vector3(Float(array2[0]), Float(array2[1]), Float(array2[2]));
+				hatch.HasHinge = true;
+			}
+		}
+		Hatches.Add(hatch);
+	}
+
+	private static float Float(string text)
+	{
+		return float.Parse(text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture);
+	}
+
+	internal static bool TryArmour(string groupName, out float ke, out float ce, out int layers)
+	{
+		Load();
+		if (Armours.TryGetValue(groupName, out var value))
+		{
+			ke = value.Ke;
+			ce = value.Ce;
+			layers = value.Layers;
+			return true;
+		}
+		ke = (ce = 0f);
+		layers = 0;
+		return false;
+	}
+
+	internal static string CodexFor(string groupName)
+	{
+		Load();
+		if (!CodexOverrides.TryGetValue(groupName, out var value))
+		{
+			return null;
+		}
+		return value;
+	}
+
+	internal static bool TryRole(string name, out Color albedo, out int gloss)
+	{
+		Load();
+		if (InteriorRoles.TryGetValue(name, out var value))
+		{
+			albedo = value.Albedo;
+			gloss = value.Gloss;
+			return true;
+		}
+		albedo = Color.white;
+		gloss = 32;
+		return false;
+	}
+
+	internal static bool IsVanillaOff(string plateName)
+	{
+		Load();
+		foreach (string item in VanillaOff)
+		{
+			if (plateName.IndexOf(item, StringComparison.OrdinalIgnoreCase) >= 0)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	internal static Hatch HatchFor(string groupName, string role)
+	{
+		Load();
+		foreach (Hatch hatch in Hatches)
+		{
+			if (hatch.Group.Equals(groupName, StringComparison.OrdinalIgnoreCase))
+			{
+				return hatch;
+			}
+			if (!string.IsNullOrEmpty(role) && hatch.Role.Equals(role, StringComparison.OrdinalIgnoreCase) && hatch.Group.Length == 0)
+			{
+				return hatch;
+			}
+		}
+		return null;
+	}
 }

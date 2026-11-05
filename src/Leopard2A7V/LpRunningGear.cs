@@ -4,441 +4,455 @@ using System.Text;
 using MelonLoader;
 using UnityEngine;
 
-namespace Leopard2A7V
+namespace Leopard2A7V;
+
+public static class LpRunningGear
 {
-    /// <summary>
-    /// Puts the imported wheels, idler and drive sprockets on the donor's own animated bones.
-    ///
-    /// The donor binds its road wheels, idlers, sprockets and track segments to 33 bones under leo2_rig, and
-    /// the game turns those bones through the WheelControllers node - so the motion already exists and the
-    /// only thing missing was art riding it. Building one mesh per Wavefront object name (the export splits
-    /// the running gear that way: wheel_l_01 to _07, plus _drive and _front per side) lets each of our parts
-    /// be parented to a bone of its own, which is what a skin would do with far less machinery.
-    ///
-    /// Wheel numbering direction is not stated anywhere in the export, so a part takes the *nearest* free
-    /// bone of its side and role instead of trusting the index. That makes the match self-correcting, and the
-    /// distance it reports is the alignment residual between the two models' suspension layouts.
-    ///
-    /// The seven suspension arms per side ride the donor's own arm bones rather than the hull. The animated
-    /// "running gear" skin binds 33 bones - 14 wheels, an idler, a sprocket and 14 arm_l/r_1..7 - and the donor's
-    /// TrackedWheelNodeConfig swings that same arm array, so the motion is already there and only the art was
-    /// bolted to the hull. An arm is not matched by distance: our row spans 4.94 m against the donor's 4.85 m, so
-    /// the middle arm of one is nearer its neighbour's hub than its own. Both sides number front to rear, and the
-    /// measurements agree on what that means (art suspension_l_01 at +2.519 m through _07 at -2.420 m, against
-    /// donor arm_l_1 at +2.614 and arm_l_7 at -2.240), so the number in the name is the match. The return
-    /// rollers have no bone in that array and stay with the hull, which is what the donor's skin does with them.
-    /// </summary>
-    public static class LpRunningGear
-    {
-        private const string Tag = "[L2A7V][gear]";
+	private sealed class Part
+	{
+		public string Name;
 
-        /// <summary>How far a part may be from the bone it takes; beyond this the match is only a guess.</summary>
-        private const float MaxBindDistance = 0.6f;
+		public Bounds Box;
 
-        private sealed class Part
-        {
-            public string Name;
-            public Bounds Box;
-            public bool HasBox;
+		public bool HasBox;
 
-            public void Include(Bounds other)
-            {
-                if (!HasBox)
-                {
-                    Box = other;
-                    HasBox = true;
-                    return;
-                }
-                Vector3 min = Vector3.Min(Box.min, other.min);
-                Vector3 max = Vector3.Max(Box.max, other.max);
-                Box.center = (min + max) * 0.5f;
-                Box.size = max - min;
-            }
-        }
+		public void Include(Bounds other)
+		{
+			if (!HasBox)
+			{
+				Box = other;
+				HasBox = true;
+				return;
+			}
+			Vector3 vector = Vector3.Min(Box.min, other.min);
+			Vector3 vector2 = Vector3.Max(Box.max, other.max);
+			Box.center = (vector + vector2) * 0.5f;
+			Box.size = vector2 - vector;
+		}
+	}
 
-        /// <summary>
-        /// Binds the gear as soon as the donor's wheel bones exist, and says whether it has.
-        ///
-        /// A unit spawned from the template starts without them: the template is cloned from the donor prefab,
-        /// which no game system has ever run, and the skinned running gear that carries those bones is built
-        /// by the game's own art pass on a live unit. The conversion therefore fell back to a static mesh and
-        /// the vehicle rolled on nothing until this ran. Called from the per-unit watcher, so the first tick
-        /// after the art pass arrives binds the real gear and takes the stand-in away.
-        /// </summary>
-        internal static bool Ensure(Transform unitRoot)
-        {
-            if (LpConfig.UseDonorRunningGear) return true;   // the donor's own gear is the gear
-            if (unitRoot == null) return true;
-            Transform hull = FindDeep(unitRoot, "L2A7V_HullPivot");
-            if (hull == null) return false;
-            if (FindDeep(hull, "L2A7V_wheel_l_01") != null) return true;      // already riding its bones
+	private sealed class Pools
+	{
+		public List<Transform> RoadLeft;
 
-            List<Transform> bones = FindBones(unitRoot);
-            if (bones == null || bones.Count == 0) return false;              // the art pass has not arrived yet
+		public List<Transform> RoadRight;
 
-            Transform stand = FindDeep(hull, "L2A7V_RunningGearStatic");
-            if (stand != null) UnityEngine.Object.Destroy(stand.gameObject);
-            MelonLogger.Msg(Tag + " the donor's wheel bones have arrived; binding the imported gear to them");
-            Attach(hull, unitRoot);
-            return true;
-        }
+		public List<Transform> IdlerLeft;
 
-        private static Transform FindDeep(Transform root, string name)
-        {
-            if (root == null) return null;
-            if (root.name == name) return root;
-            foreach (Transform child in root)
-            {
-                Transform found = FindDeep(child, name);
-                if (found != null) return found;
-            }
-            return null;
-        }
+		public List<Transform> IdlerRight;
 
-        public static void Attach(Transform hullPivot, Transform unitRoot)
-        {            var stillNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            Dictionary<string, Part> parts = CollectParts();
+		public List<Transform> SprocketLeft;
 
-            List<Transform> bones = FindBones(unitRoot);
-            if (parts == null || parts.Count == 0)
-            {
-                MelonLogger.Warning(Tag + " the model has no running gear objects");
-                return;
-            }
-            if (bones == null || bones.Count == 0)
-            {
-                MelonLogger.Error(Tag + " the donor's wheel bones are gone, so the imported gear stays still");
-                BuildStatic(hullPivot, null);
-                AttachTracks(hullPivot, unitRoot, CountTrackLoops());
-                return;
-            }
+		public List<Transform> SprocketRight;
 
-            var pools = new Pools
-            {
-                RoadLeft = Take(bones, "wheel_l_", "top"),
-                RoadRight = Take(bones, "wheel_r_", "top"),
-                IdlerLeft = Take(bones, "idler_l", null),
-                IdlerRight = Take(bones, "idler_r", null),
-                SprocketLeft = Take(bones, "sprocket_l", null),
-                SprocketRight = Take(bones, "sprocket_r", null),
-                ArmLeft = Take(bones, "arm_l", null),
-                ArmRight = Take(bones, "arm_r", null),
-            };
-            MelonLogger.Msg(Tag + $" donor bones: {pools.RoadLeft.Count}+{pools.RoadRight.Count} road wheels, " +
-                            $"{pools.IdlerLeft.Count}+{pools.IdlerRight.Count} idlers, " +
-                            $"{pools.SprocketLeft.Count}+{pools.SprocketRight.Count} sprockets, " +
-                            $"{pools.ArmLeft.Count}+{pools.ArmRight.Count} arms");
+		public List<Transform> ArmLeft;
 
-            int bound = 0;
-            bound += BindArms(hullPivot, parts, "suspension_l_", pools.ArmLeft, stillNames);
-            bound += BindArms(hullPivot, parts, "suspension_r_", pools.ArmRight, stillNames);
-            foreach (Part part in parts.Values)
-            {
-                if (IsArm(part.Name)) continue;   // paired above, onto the donor's swinging arm bones
+		public List<Transform> ArmRight;
+	}
 
-                Vector3 home = hullPivot.TransformPoint(part.Box.center);
-                Transform bone = Nearest(PoolFor(part.Name, pools), home);
-                if (bone == null)
-                {
-                    stillNames.Add(part.Name);
-                    continue;
-                }
+	private const string Tag = "[L2A7V][gear]";
 
-                float distance = Vector3.Distance(home, bone.position);
-                if (distance > MaxBindDistance)
-                {
-                    MelonLogger.Warning(Tag + $" {part.Name} is {distance:0.00} m from {bone.name}, left still");
-                    stillNames.Add(part.Name);
-                    continue;
-                }
+	private const float MaxBindDistance = 0.6f;
 
-                // The holder cancels the bone's scale and sits on its origin, so the bone's rotation spins the
-                // part about its own axle. Resetting the world rotation afterwards keeps our art's own stance.
-                Transform holder = LpVisual.MakePivot(bone, "L2A7V_" + part.Name, Vector3.zero);
-                holder.rotation = hullPivot.rotation;
-                MeshRenderer wheel = LpVisual.AttachMesh(holder, "L2A7V_" + part.Name,
-                    LpAssets.BuildWhere(p => p.Group == LpGroup.RunningGear &&
-                                             string.Equals(p.ObjectName, part.Name, StringComparison.OrdinalIgnoreCase),
-                        "L2A7V_" + part.Name, part.Box.center));
-                // A curved wheel that receives the shadow of the hull and the track right above it picks up the
-                // vehicle shader's shadow bias as blocky patches - the mosaic that shows up on the running gear
-                // from some angles. Nothing here is big enough for its own shadow to matter, so it only casts.
-                if (wheel != null) wheel.receiveShadows = false;
-                bound++;
+	internal static bool Ensure(Transform unitRoot)
+	{
+		if (LpConfig.UseDonorRunningGear)
+		{
+			return true;
+		}
+		if (unitRoot == null)
+		{
+			return true;
+		}
+		Transform transform = FindDeep(unitRoot, "L2A7V_HullPivot");
+		if (transform == null)
+		{
+			return false;
+		}
+		if (FindDeep(transform, "L2A7V_wheel_l_01") != null)
+		{
+			return true;
+		}
+		List<Transform> list = FindBones(unitRoot);
+		if (list == null || list.Count == 0)
+		{
+			return false;
+		}
+		Transform transform2 = FindDeep(transform, "L2A7V_RunningGearStatic");
+		if (transform2 != null)
+		{
+			UnityEngine.Object.Destroy(transform2.gameObject);
+		}
+		MelonLogger.Msg("[L2A7V][gear] the donor's wheel bones have arrived; binding the imported gear to them");
+		Attach(transform, unitRoot);
+		return true;
+	}
 
-                MelonLogger.Msg(Tag + $" {part.Name} -> {PathOf(bone)} offset {distance * 1000:0} mm");
-            }
+	private static Transform FindDeep(Transform root, string name)
+	{
+		if (root == null)
+		{
+			return null;
+		}
+		if (root.name == name)
+		{
+			return root;
+		}
+		foreach (Transform item in root)
+		{
+			Transform transform = FindDeep(item, name);
+			if (transform != null)
+			{
+				return transform;
+			}
+		}
+		return null;
+	}
 
-            BuildStatic(hullPivot, stillNames);
-            MelonLogger.Msg(Tag + $" {bound} part(s) ride a bone, {stillNames.Count} object(s) have none");
-            AttachTracks(hullPivot, unitRoot, CountTrackLoops());
-        }
+	public static void Attach(Transform hullPivot, Transform unitRoot)
+	{
+		HashSet<string> hashSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		Dictionary<string, Part> dictionary = CollectParts();
+		List<Transform> list = FindBones(unitRoot);
+		if (dictionary == null || dictionary.Count == 0)
+		{
+			MelonLogger.Warning("[L2A7V][gear] the model has no running gear objects");
+			return;
+		}
+		if (list == null || list.Count == 0)
+		{
+			MelonLogger.Error("[L2A7V][gear] the donor's wheel bones are gone, so the imported gear stays still");
+			BuildStatic(hullPivot, null);
+			AttachTracks(hullPivot, unitRoot, CountTrackLoops());
+			return;
+		}
+		Pools pools = new Pools
+		{
+			RoadLeft = Take(list, "wheel_l_", "top"),
+			RoadRight = Take(list, "wheel_r_", "top"),
+			IdlerLeft = Take(list, "idler_l", null),
+			IdlerRight = Take(list, "idler_r", null),
+			SprocketLeft = Take(list, "sprocket_l", null),
+			SprocketRight = Take(list, "sprocket_r", null),
+			ArmLeft = Take(list, "arm_l", null),
+			ArmRight = Take(list, "arm_r", null)
+		};
+		MelonLogger.Msg("[L2A7V][gear]" + $" donor bones: {pools.RoadLeft.Count}+{pools.RoadRight.Count} road wheels, " + $"{pools.IdlerLeft.Count}+{pools.IdlerRight.Count} idlers, " + $"{pools.SprocketLeft.Count}+{pools.SprocketRight.Count} sprockets, " + $"{pools.ArmLeft.Count}+{pools.ArmRight.Count} arms");
+		int num = 0;
+		num += BindArms(hullPivot, dictionary, "suspension_l_", pools.ArmLeft, hashSet);
+		num += BindArms(hullPivot, dictionary, "suspension_r_", pools.ArmRight, hashSet);
+		foreach (Part part in dictionary.Values)
+		{
+			if (IsArm(part.Name))
+			{
+				continue;
+			}
+			Vector3 vector = hullPivot.TransformPoint(part.Box.center);
+			Transform transform = Nearest(PoolFor(part.Name, pools), vector);
+			if (transform == null)
+			{
+				hashSet.Add(part.Name);
+				continue;
+			}
+			float num2 = Vector3.Distance(vector, transform.position);
+			if (num2 > 0.6f)
+			{
+				MelonLogger.Warning("[L2A7V][gear]" + $" {part.Name} is {num2:0.00} m from {transform.name}, left still");
+				hashSet.Add(part.Name);
+				continue;
+			}
+			Transform transform2 = LpVisual.MakePivot(transform, "L2A7V_" + part.Name, Vector3.zero);
+			transform2.rotation = hullPivot.rotation;
+			MeshRenderer meshRenderer = LpVisual.AttachMesh(transform2, "L2A7V_" + part.Name, LpAssets.BuildWhere((ObjGeometry p) => p.Group == LpGroup.RunningGear && string.Equals(p.ObjectName, part.Name, StringComparison.OrdinalIgnoreCase), "L2A7V_" + part.Name, part.Box.center));
+			if (meshRenderer != null)
+			{
+				meshRenderer.receiveShadows = false;
+			}
+			num++;
+			MelonLogger.Msg("[L2A7V][gear]" + $" {part.Name} -> {PathOf(transform)} offset {num2 * 1000f:0} mm");
+		}
+		BuildStatic(hullPivot, hashSet);
+		MelonLogger.Msg("[L2A7V][gear]" + $" {num} part(s) ride a bone, {hashSet.Count} object(s) have none");
+		AttachTracks(hullPivot, unitRoot, CountTrackLoops());
+	}
 
-        /// <summary>
-        /// Hangs one side's suspension arms on the donor's arm bones, matched by the number each side puts in its
-        /// own name (art suspension_l_01..07 against donor arm_l_1..7, both front to rear). Distance cannot do
-        /// this between rows whose hubs are not where our art drew them.
-        /// </summary>
-        private static int BindArms(Transform hullPivot, Dictionary<string, Part> parts, string prefix,
-            List<Transform> bones, HashSet<string> stillNames)
-        {
-            var byNumber = new Dictionary<int, Transform>();
-            foreach (Transform bone in bones)
-            {
-                if (bone == null) continue;
-                int number = FirstNumber(bone.name);
-                if (number > 0 && !byNumber.ContainsKey(number)) byNumber[number] = bone;
-            }
+	private static int BindArms(Transform hullPivot, Dictionary<string, Part> parts, string prefix, List<Transform> bones, HashSet<string> stillNames)
+	{
+		Dictionary<int, Transform> dictionary = new Dictionary<int, Transform>();
+		foreach (Transform bone in bones)
+		{
+			if (!(bone == null))
+			{
+				int num = FirstNumber(bone.name);
+				if (num > 0 && !dictionary.ContainsKey(num))
+				{
+					dictionary[num] = bone;
+				}
+			}
+		}
+		int num2 = 0;
+		foreach (Part value2 in parts.Values)
+		{
+			if (value2.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+			{
+				if (!dictionary.TryGetValue(FirstNumber(value2.Name), out var value))
+				{
+					MelonLogger.Warning("[L2A7V][gear] " + value2.Name + " has no donor arm bone numbered with it, so it stays on the hull");
+					stillNames.Add(value2.Name);
+				}
+				else
+				{
+					BindRigid(hullPivot, value2, value);
+					num2++;
+				}
+			}
+		}
+		return num2;
+	}
 
-            int bound = 0;
-            foreach (Part part in parts.Values)
-            {
-                if (!part.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
-                Transform bone;
-                if (!byNumber.TryGetValue(FirstNumber(part.Name), out bone))
-                {
-                    MelonLogger.Warning(Tag + $" {part.Name} has no donor arm bone numbered with it, so it " +
-                                        "stays on the hull");
-                    stillNames.Add(part.Name);
-                    continue;
-                }
-                BindRigid(hullPivot, part, bone);
-                bound++;
-            }
-            return bound;
-        }
+	private static void BindRigid(Transform hullPivot, Part part, Transform bone)
+	{
+		string text = "L2A7V_" + part.Name;
+		Transform transform = LpVisual.MakePivot(bone, text, Vector3.zero);
+		transform.position = hullPivot.TransformPoint(part.Box.center);
+		transform.rotation = hullPivot.rotation;
+		LpVisual.AttachMesh(transform, text, LpAssets.BuildWhere((ObjGeometry p) => p.Group == LpGroup.RunningGear && string.Equals(p.ObjectName, part.Name, StringComparison.OrdinalIgnoreCase), text, part.Box.center));
+		float num = Vector3.Distance(transform.position, bone.position);
+		MelonLogger.Msg("[L2A7V][gear] " + part.Name + " -> " + PathOf(bone) + ", swings with it from its drawn place " + $"{num * 1000f:0} mm off that bone's pivot");
+	}
 
-        /// <summary>
-        /// Puts a part on a bone without moving it: the mesh is built about the part's own centre, the holder is
-        /// placed back on the spot the export drew it, and from then on every move the bone makes - the swing, and
-        /// whatever travel the game gives its pivot - carries the part with it. An arm wants this and a wheel does
-        /// not: the arm's job is to pivot with the torsion bar, so its place relative to the bone has to hold.
-        /// </summary>
-        private static void BindRigid(Transform hullPivot, Part part, Transform bone)
-        {
-            string node = "L2A7V_" + part.Name;
-            Transform holder = LpVisual.MakePivot(bone, node, Vector3.zero);
-            holder.position = hullPivot.TransformPoint(part.Box.center);
-            holder.rotation = hullPivot.rotation;
-            LpVisual.AttachMesh(holder, node,
-                LpAssets.BuildWhere(p => p.Group == LpGroup.RunningGear &&
-                                         string.Equals(p.ObjectName, part.Name, StringComparison.OrdinalIgnoreCase),
-                    node, part.Box.center));
+	private static int FirstNumber(string name)
+	{
+		int num = 0;
+		bool flag = false;
+		foreach (char c in name)
+		{
+			if (c < '0' || c > '9')
+			{
+				if (flag)
+				{
+					break;
+				}
+			}
+			else
+			{
+				num = num * 10 + (c - 48);
+				flag = true;
+			}
+		}
+		if (!flag)
+		{
+			return 0;
+		}
+		return num;
+	}
 
-            float distance = Vector3.Distance(holder.position, bone.position);
-            MelonLogger.Msg(Tag + $" {part.Name} -> {PathOf(bone)}, swings with it from its drawn place " +
-                            $"{distance * 1000:0} mm off that bone's pivot");
-        }
+	private static bool IsArm(string objectName)
+	{
+		return objectName.StartsWith("suspension_", StringComparison.OrdinalIgnoreCase);
+	}
 
-        /// <summary>The first run of digits in a name, which is how both sides number a row: arm_l_4, suspension_l_04.</summary>
-        private static int FirstNumber(string name)
-        {
-            int value = 0;
-            bool any = false;
-            foreach (char c in name)
-            {
-                if (c < '0' || c > '9') { if (any) break; continue; }
-                value = value * 10 + (c - '0');
-                any = true;
-            }
-            return any ? value : 0;
-        }
+	private static int CountTrackLoops()
+	{
+		HashSet<string> hashSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		foreach (ObjGeometry geometry in ObjModel.Geometries)
+		{
+			if (geometry.Group == LpGroup.RunningGear && IsTrackLoop(geometry.ObjectName))
+			{
+				hashSet.Add(geometry.ObjectName);
+			}
+		}
+		return hashSet.Count;
+	}
 
-        /// <summary>One side's suspension arms.</summary>
-        private static bool IsArm(string objectName) =>
-            objectName.StartsWith("suspension_", StringComparison.OrdinalIgnoreCase);
+	private static bool IsTrackLoop(string objectName)
+	{
+		return objectName?.StartsWith("track_", StringComparison.OrdinalIgnoreCase) ?? false;
+	}
 
-        /// <summary>How many exported track loops the model carries.</summary>
-        private static int CountTrackLoops()
-        {
-            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (ObjGeometry geometry in ObjModel.Geometries)
-            {
-                if (geometry.Group != LpGroup.RunningGear) continue;
-                if (IsTrackLoop(geometry.ObjectName)) names.Add(geometry.ObjectName);
-            }
-            return names.Count;
-        }
+	private static List<Transform> PoolFor(string objectName, Pools pools)
+	{
+		string text = objectName.ToLowerInvariant();
+		if (!text.StartsWith("wheel_", StringComparison.Ordinal) || text.Contains("top"))
+		{
+			return null;
+		}
+		bool flag = text.Contains("_l");
+		if (text.Contains("drive"))
+		{
+			if (!flag)
+			{
+				return pools.SprocketRight;
+			}
+			return pools.SprocketLeft;
+		}
+		if (text.Contains("front"))
+		{
+			if (!flag)
+			{
+				return pools.IdlerRight;
+			}
+			return pools.IdlerLeft;
+		}
+		if (!flag)
+		{
+			return pools.RoadRight;
+		}
+		return pools.RoadLeft;
+	}
 
-        /// <summary>The exported track loops, by their Wavefront object names (track_l, track_r).</summary>
-        private static bool IsTrackLoop(string objectName) =>
-            objectName != null && objectName.StartsWith("track_", StringComparison.OrdinalIgnoreCase);
+	private static Transform Nearest(List<Transform> pool, Vector3 home)
+	{
+		if (pool == null || pool.Count == 0)
+		{
+			return null;
+		}
+		Transform transform = null;
+		float num = float.MaxValue;
+		for (int num2 = pool.Count - 1; num2 >= 0; num2--)
+		{
+			Transform transform2 = pool[num2];
+			if (transform2 == null)
+			{
+				pool.RemoveAt(num2);
+			}
+			else
+			{
+				float num3 = Vector3.Distance(home, transform2.position);
+				if (!(num3 >= num))
+				{
+					num = num3;
+					transform = transform2;
+				}
+			}
+		}
+		if (transform != null)
+		{
+			pool.Remove(transform);
+		}
+		return transform;
+	}
 
-        /// <summary>The donor bone pools a part may draw from, one per side and role.</summary>
-        private sealed class Pools
-        {
-            public List<Transform> RoadLeft;
-            public List<Transform> RoadRight;
-            public List<Transform> IdlerLeft;
-            public List<Transform> IdlerRight;
-            public List<Transform> SprocketLeft;
-            public List<Transform> SprocketRight;
-            public List<Transform> ArmLeft;
-            public List<Transform> ArmRight;
-        }
+	private static void BuildStatic(Transform hullPivot, HashSet<string> stillNames)
+	{
+		LpVisual.AttachMesh(hullPivot, "L2A7V_RunningGearStatic", LpAssets.BuildWhere((ObjGeometry p) => p.Group == LpGroup.RunningGear && !IsTrackLoop(p.ObjectName) && (stillNames == null || stillNames.Contains(p.ObjectName)), "L2A7V_RunningGearStatic", Vector3.zero));
+	}
 
-        /// <summary>
-        /// Only the rolling parts get a bone from this table: road wheels by side, the drive sprocket and the
-        /// front idler. A null pool means the object stays with the hull, which covers the return rollers and
-        /// both track loops; the suspension arms have bones of their own and are matched by BindArms instead.
-        /// </summary>
-        private static List<Transform> PoolFor(string objectName, Pools pools)
-        {
-            string n = objectName.ToLowerInvariant();
-            if (!n.StartsWith("wheel_", StringComparison.Ordinal) || n.Contains("top")) return null;
+	private static void AttachTracks(Transform hullPivot, Transform unitRoot, int loops)
+	{
+		if (!LpConfig.UseDonorTrackArt)
+		{
+			LpTracks.Attach(hullPivot, unitRoot);
+		}
+		MelonLogger.Msg("[L2A7V][gear]" + $" {loops} track loop(s) " + (LpConfig.UseDonorTrackArt ? "left to the donor's animated art" : ("rebuilt to scroll, " + LpTracks.Status)));
+	}
 
-            bool left = n.Contains("_l");
-            if (n.Contains("drive")) return left ? pools.SprocketLeft : pools.SprocketRight;
-            if (n.Contains("front")) return left ? pools.IdlerLeft : pools.IdlerRight;
-            return left ? pools.RoadLeft : pools.RoadRight;
-        }
+	private static Dictionary<string, Part> CollectParts()
+	{
+		if (ObjModel.Geometries.Count == 0)
+		{
+			return null;
+		}
+		Dictionary<string, Part> dictionary = new Dictionary<string, Part>(StringComparer.OrdinalIgnoreCase);
+		foreach (ObjGeometry geometry in ObjModel.Geometries)
+		{
+			if (geometry.Group == LpGroup.RunningGear && (!LpConfig.UseDonorTrackArt || !IsTrackLoop(geometry.ObjectName)))
+			{
+				if (!dictionary.TryGetValue(geometry.ObjectName, out var value))
+				{
+					value = new Part
+					{
+						Name = geometry.ObjectName
+					};
+					dictionary[geometry.ObjectName] = value;
+				}
+				value.Include(geometry.Bounds);
+			}
+		}
+		return dictionary;
+	}
 
-        /// <summary>Takes the closest free bone to a part's own centre and removes it from the pool.</summary>
-        private static Transform Nearest(List<Transform> pool, Vector3 home)
-        {
-            if (pool == null || pool.Count == 0) return null;
+	private static List<Transform> Take(List<Transform> bones, string prefix, string exclude)
+	{
+		List<Transform> list = new List<Transform>();
+		foreach (Transform bone in bones)
+		{
+			if (!(bone == null))
+			{
+				string text = bone.name.ToLowerInvariant();
+				if (text.StartsWith(prefix, StringComparison.Ordinal) && (exclude == null || !text.Contains(exclude)))
+				{
+					list.Add(bone);
+				}
+			}
+		}
+		return list;
+	}
 
-            Transform best = null;
-            float bestDistance = float.MaxValue;
-            for (int i = pool.Count - 1; i >= 0; i--)
-            {
-                Transform bone = pool[i];
-                if (bone == null)
-                {
-                    pool.RemoveAt(i);
-                    continue;
-                }
-                float distance = Vector3.Distance(home, bone.position);
-                if (distance >= bestDistance) continue;
-                bestDistance = distance;
-                best = bone;
-            }
-            if (best != null) pool.Remove(best);
-            return best;
-        }
+	private static List<Transform> FindBones(Transform unitRoot)
+	{
+		HashSet<string> hashSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "wheel", "idler", "sprocket", "arm" };
+		List<Transform> list = null;
+		SkinnedMeshRenderer[] componentsInChildren = unitRoot.GetComponentsInChildren<SkinnedMeshRenderer>(includeInactive: true);
+		foreach (SkinnedMeshRenderer skinnedMeshRenderer in componentsInChildren)
+		{
+			if (LpVisual.IsImportedArt(skinnedMeshRenderer.transform))
+			{
+				continue;
+			}
+			Transform[] bones = skinnedMeshRenderer.bones;
+			if (bones == null)
+			{
+				continue;
+			}
+			List<Transform> list2 = new List<Transform>();
+			Transform[] array = bones;
+			foreach (Transform transform in array)
+			{
+				if (transform == null)
+				{
+					continue;
+				}
+				string text = transform.name.ToLowerInvariant();
+				foreach (string item in hashSet)
+				{
+					if (text.StartsWith(item, StringComparison.Ordinal))
+					{
+						list2.Add(transform);
+						break;
+					}
+				}
+			}
+			if (list2.Count >= 4)
+			{
+				if (PathOf(skinnedMeshRenderer.transform).IndexOf("running gear", StringComparison.OrdinalIgnoreCase) >= 0)
+				{
+					MelonLogger.Msg("[L2A7V][gear]" + $" wheel bones from {PathOf(skinnedMeshRenderer.transform)} ({list2.Count})");
+					return list2;
+				}
+				if (list == null || list2.Count > list.Count)
+				{
+					list = list2;
+				}
+			}
+		}
+		if (list != null)
+		{
+			MelonLogger.Warning("[L2A7V][gear]" + $" no running gear skin, using {list.Count} wheel bones from another mesh");
+		}
+		return list;
+	}
 
-        /// <summary>
-        /// The return rollers: everything that has no bone of its own and therefore travels with the hull, exactly
-        /// as the donor's skin binds them. Passing null builds the whole group,
-        /// which is what the no-bones fallback wants. The track loops never belong here: as static hull art
-        /// they are the reason the user reported tracks that were present but standing still, so one side or
-        /// the other always draws them - the donor's animated skin, or LpTracks' scrolling copy of ours.
-        /// </summary>
-        private static void BuildStatic(Transform hullPivot, HashSet<string> stillNames)
-        {
-            LpVisual.AttachMesh(hullPivot, "L2A7V_RunningGearStatic",
-                LpAssets.BuildWhere(p => p.Group == LpGroup.RunningGear && !IsTrackLoop(p.ObjectName) &&
-                                         (stillNames == null || stillNames.Contains(p.ObjectName)),
-                    "L2A7V_RunningGearStatic", Vector3.zero));
-        }
-
-        /// <summary>Gives the loops to whoever is going to draw them, then reports which that was.</summary>
-        private static void AttachTracks(Transform hullPivot, Transform unitRoot, int loops)
-        {
-            if (!LpConfig.UseDonorTrackArt) LpTracks.Attach(hullPivot, unitRoot);
-            MelonLogger.Msg(Tag + $" {loops} track loop(s) " +
-                            (LpConfig.UseDonorTrackArt
-                                ? "left to the donor's animated art"
-                                : "rebuilt to scroll, " + LpTracks.Status));
-        }
-
-        private static Dictionary<string, Part> CollectParts()
-        {
-            if (ObjModel.Geometries.Count == 0) return null;
-
-            var parts = new Dictionary<string, Part>(StringComparer.OrdinalIgnoreCase);
-            foreach (ObjGeometry geometry in ObjModel.Geometries)
-            {
-                if (geometry.Group != LpGroup.RunningGear) continue;
-                // The donor's own skinned loops are what this vehicle rolls on, and they carry the Leopard 2A3
-                // track sheet. Drawing the export's loops as well would put a stiff copy of the track on a
-                // wheel, textured with the model's own sheet, on top of the animated one.
-                if (LpConfig.UseDonorTrackArt && IsTrackLoop(geometry.ObjectName)) continue;
-                Part part;
-                if (!parts.TryGetValue(geometry.ObjectName, out part))
-                {
-                    part = new Part { Name = geometry.ObjectName };
-                    parts[geometry.ObjectName] = part;
-                }
-                part.Include(geometry.Bounds);
-            }
-            return parts;
-        }
-
-        private static List<Transform> Take(List<Transform> bones, string prefix, string exclude)
-        {
-            var found = new List<Transform>();
-            foreach (Transform bone in bones)
-            {
-                if (bone == null) continue;
-                string n = bone.name.ToLowerInvariant();
-                if (!n.StartsWith(prefix, StringComparison.Ordinal)) continue;
-                if (exclude != null && n.Contains(exclude)) continue;
-                found.Add(bone);
-            }
-            return found;
-        }
-
-        /// <summary>
-        /// The donor's own skin is the authority on which transforms are the wheels: the prefab has several
-        /// nodes that are called wheel_l_1, and only the ones in this bone array are driven. The "running gear"
-        /// skin is the one the LEO2A3 actually animates, so it wins outright; abrams_tracks carries a second,
-        /// unused wheel rig that would otherwise be a plausible-looking pool in the wrong place.
-        ///
-        /// The arm bones come out of the same array, because that is where the driven ones are: this skin's 33
-        /// bones are 14 wheels, an idler and a sprocket per side and 14 arm_l/r_1..7 (tracked_bone_names.py), and
-        /// the donor's TrackedWheelNodeConfig swings exactly leo2_rig/hull/arm_l_1..7 then arm_r_1..7, in the same
-        /// order as its Wheel L1..L7 controllers and its arm_l_i/wheel_l_i VisualNodes (lp_track_nodes.txt).
-        /// Without "arm" in this table the arm pool arrives empty and the suspension art has nothing to hang on.
-        /// </summary>
-        private static List<Transform> FindBones(Transform unitRoot)
-        {
-            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                "wheel", "idler", "sprocket", "arm",
-            };
-
-            List<Transform> best = null;
-            foreach (SkinnedMeshRenderer skin in unitRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true))
-            {
-                if (LpVisual.IsImportedArt(skin.transform)) continue;
-                Transform[] bones = skin.bones;
-                if (bones == null) continue;
-
-                var matches = new List<Transform>();
-                foreach (Transform bone in bones)
-                {
-                    if (bone == null) continue;
-                    string lower = bone.name.ToLowerInvariant();
-                    foreach (string name in names)
-                        if (lower.StartsWith(name, StringComparison.Ordinal)) { matches.Add(bone); break; }
-                }
-                if (matches.Count < 4) continue;
-
-                if (PathOf(skin.transform).IndexOf("running gear", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    MelonLogger.Msg(Tag + $" wheel bones from {PathOf(skin.transform)} ({matches.Count})");
-                    return matches;
-                }
-                if (best == null || matches.Count > best.Count) best = matches;
-            }
-
-            if (best != null)
-                MelonLogger.Warning(Tag + $" no running gear skin, using {best.Count} wheel bones from another mesh");
-            return best;
-        }
-
-        private static string PathOf(Transform node)
-        {
-            var builder = new StringBuilder(node.name);
-            Transform parent = node.parent;
-            int guard = 0;
-            while (parent != null && guard++ < 12)
-            {
-                builder.Insert(0, parent.name + "/");
-                parent = parent.parent;
-            }
-            return builder.ToString();
-        }
-    }
+	private static string PathOf(Transform node)
+	{
+		StringBuilder stringBuilder = new StringBuilder(node.name);
+		Transform parent = node.parent;
+		int num = 0;
+		while (parent != null && num++ < 12)
+		{
+			stringBuilder.Insert(0, parent.name + "/");
+			parent = parent.parent;
+		}
+		return stringBuilder.ToString();
+	}
 }

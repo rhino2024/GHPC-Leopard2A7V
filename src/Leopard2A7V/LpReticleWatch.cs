@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text;
 using GHPC.Camera;
@@ -6,132 +7,114 @@ using MelonLoader;
 using Reticle;
 using UnityEngine;
 
-namespace Leopard2A7V
+namespace Leopard2A7V;
+
+public class LpReticleWatch : MonoBehaviour
 {
-    /// <summary>
-    /// Keeps the graticule of the sight the player is looking through switched on, and reports what the game's
-    /// reticle pass holds.
-    ///
-    /// GHPC draws reticles through PostMeshComp, which registers its renderer in a static sorted list and then
-    /// switches the renderer itself off - the post pass is what draws it. That arrangement leaves the renderer
-    /// flag as a second gate that the game only opens for some reticles: with several vehicles in the scene the
-    /// backup sight's plate and the cupola gun's plate sit in the list with their renderer off, and a renderer
-    /// that is off is a graticule that is not drawn.
-    ///
-    /// So the plate of whichever optic is the active view is asserted on every frame. Nothing else is touched:
-    /// the list itself, the render order and every other vehicle stay exactly as they are.
-    /// </summary>
-    public class LpReticleWatch : MonoBehaviour
-    {
-        private const string Tag = "[L2A7V][reticle]";
+	private const string Tag = "[L2A7V][reticle]";
 
-        private PostMeshComp[] _posts = new PostMeshComp[0];
-        private float _nextCollect;
-        private float _nextReport;
-        private float _nextRebuild;
-        private string _reportedView;
+	private sealed class Entry
+	{
+		internal PostMeshComp Post;
 
-        private void LateUpdate()
-        {
-            if (Time.unscaledTime >= _nextCollect)
-            {
-                _nextCollect = Time.unscaledTime + 2f;
-                _posts = GetComponentsInChildren<PostMeshComp>(true);
-            }
+		internal UsableOptic Optic;
 
-            CameraSlot active = CameraSlot.ActiveInstance;
-            if (active == null) return;
+		internal Renderer Renderer;
 
-            for (int i = 0; i < _posts.Length; i++)
-            {
-                PostMeshComp post = _posts[i];
-                if (post == null) continue;
+		internal ReticleMesh Mesh;
 
-                UsableOptic optic = post.GetComponentInParent<UsableOptic>();
-                if (optic == null || !ReferenceEquals(optic.slot, active)) continue;
+		internal SkinnedMeshRenderer Skin;
+	}
 
-                Renderer renderer = post.GetComponent<Renderer>();
-                if (renderer != null && !renderer.enabled) renderer.enabled = true;
+	private Entry[] _posts = Array.Empty<Entry>();
 
-                Repair(post);
-            }
+	private float _nextRebuild;
 
-            Report(active);
-        }
+	private CameraSlot _activeSlot;
 
-        /// <summary>
-        /// A reticle whose mesh has no vertices draws nothing however healthy its renderer and list entry look -
-        /// which is exactly what the backup sight and the imager were doing: registered, switched on, and empty.
-        /// ReticleMesh.Load stops immediately when the renderer already holds a mesh, so an empty one is never
-        /// replaced by itself; dropping it and loading again rebuilds the plate's geometry.
-        /// </summary>
-        private void Repair(PostMeshComp post)
-        {
-            ReticleMesh mesh = post.GetComponent<ReticleMesh>();
-            SkinnedMeshRenderer smr = post.GetComponent<SkinnedMeshRenderer>();
-            if (mesh == null || smr == null) return;
-            if (smr.sharedMesh != null && smr.sharedMesh.vertexCount > 0) return;
-            if (Time.unscaledTime < _nextRebuild) return;
+	private void OnEnable()
+	{
+		CameraSlot.ActiveInstanceChanged += HandleSlotChanged;
+		HandleSlotChanged(CameraSlot.ActiveInstance);
+	}
 
-            _nextRebuild = Time.unscaledTime + 1f;
-            smr.sharedMesh = null;
-            mesh.Load();
-            Mesh built = smr.sharedMesh;
-            MelonLogger.Msg(Tag + " rebuilt the empty graticule '" + post.transform.name + "': " +
-                            (built == null ? "<still empty>" : built.vertexCount + " verts"));
-        }
+	private void OnDisable()
+	{
+		CameraSlot.ActiveInstanceChanged -= HandleSlotChanged;
+		_activeSlot = null;
+	}
 
-        /// <summary>What the pass holds while this vehicle's sight is up, every few seconds.</summary>
-        private void Report(CameraSlot active)
-        {
-            if (Time.unscaledTime < _nextReport) return;
-            _nextReport = Time.unscaledTime + 3f;
-            if (active.name == _reportedView) return;
-            _reportedView = active.name;
+	private void HandleSlotChanged(CameraSlot slot)
+	{
+		_activeSlot = ((slot != null && slot.transform.IsChildOf(base.transform)) ? slot : null);
+		if (_activeSlot != null)
+		{
+			Collect();
+			for (int i = 0; i < _posts.Length; i++)
+			{
+				Entry entry = _posts[i];
+				if (entry.Optic != null && (object)entry.Optic.slot == _activeSlot)
+				{
+					if (entry.Renderer != null)
+					{
+						entry.Renderer.enabled = true;
+					}
+					Repair(entry);
+				}
+			}
+		}
+	}
 
-            var list = new StringBuilder();
-            foreach (var entry in PostMeshRenderer.renderers)
-            {
-                Renderer renderer = entry.Value;
-                list.Append(' ').Append(entry.Key.ToString("0")).Append('=')
-                    .Append(renderer == null ? "<null>" : renderer.name)
-                    .Append(renderer != null && renderer.enabled ? "(on)" : "(off)");
-            }
+	private void LateUpdate()
+	{
+		CameraSlot activeInstance = _activeSlot;
+		if (activeInstance == null)
+		{
+			return;
+		}
+		for (int i = 0; i < _posts.Length; i++)
+		{
+			Entry entry = _posts[i];
+			if (entry.Post == null || entry.Optic == null || (object)entry.Optic.slot != activeInstance)
+			{
+				continue;
+			}
+			if (entry.Renderer != null && !entry.Renderer.enabled)
+			{
+				entry.Renderer.enabled = true;
+			}
+			Repair(entry);
+		}
+	}
 
-            MelonLogger.Msg(Tag + " view '" + active.name + "': game list holds " +
-                            PostMeshRenderer.renderers.Count + ":" + list);
+	private void Collect()
+	{
+		PostMeshComp[] componentsInChildren = GetComponentsInChildren<PostMeshComp>(includeInactive: true);
+		_posts = new Entry[componentsInChildren.Length];
+		for (int i = 0; i < componentsInChildren.Length; i++)
+		{
+			PostMeshComp post = componentsInChildren[i];
+			_posts[i] = new Entry
+			{
+				Post = post,
+				Optic = ((post == null) ? null : post.GetComponentInParent<UsableOptic>()),
+				Renderer = ((post == null) ? null : post.GetComponent<Renderer>()),
+				Mesh = ((post == null) ? null : post.GetComponent<ReticleMesh>()),
+				Skin = ((post == null) ? null : post.GetComponent<SkinnedMeshRenderer>())
+			};
+		}
+	}
 
-            for (int i = 0; i < _posts.Length; i++)
-            {
-                PostMeshComp post = _posts[i];
-                if (post == null) continue;
-                UsableOptic optic = post.GetComponentInParent<UsableOptic>();
-                if (optic == null || !ReferenceEquals(optic.slot, active)) continue;
+	private void Repair(Entry entry)
+	{
+		if (!(entry.Mesh == null) && !(entry.Skin == null) && (!(entry.Skin.sharedMesh != null) || entry.Skin.sharedMesh.vertexCount <= 0) && !(Time.unscaledTime < _nextRebuild))
+		{
+			_nextRebuild = Time.unscaledTime + 1f;
+			entry.Skin.sharedMesh = null;
+			entry.Mesh.Load();
+			Mesh sharedMesh = entry.Skin.sharedMesh;
+			MelonLogger.Msg("[L2A7V][reticle] rebuilt the empty graticule '" + entry.Post.transform.name + "': " + ((sharedMesh == null) ? "<still empty>" : (sharedMesh.vertexCount + " verts")));
+		}
+	}
 
-                Renderer renderer = post.GetComponent<Renderer>();
-                string where = renderer == null
-                    ? "<no renderer>"
-                    : "bounds c=" + renderer.bounds.center + " s=" + renderer.bounds.size;
-                Camera camera = CameraManager.MainCam;
-                if (camera != null) where += " camera=" + camera.transform.position;
-                SkinnedMeshRenderer skinned = post.GetComponent<SkinnedMeshRenderer>();
-                if (skinned != null)
-                {
-                    where += " verts=" + (skinned.sharedMesh == null
-                                  ? "<null>"
-                                  : skinned.sharedMesh.vertexCount.ToString()) +
-                             " bones=" + (skinned.bones == null ? 0 : skinned.bones.Length) +
-                             " rootBone=" + (skinned.rootBone == null ? "<null>" : skinned.rootBone.name);
-                }
-
-                MelonLogger.Msg(Tag + "   active sight's reticle '" + post.transform.name + "' order=" +
-                                post.renderOrder + " active=" + post.isActiveAndEnabled +
-                                " gameObject=" + post.gameObject.activeInHierarchy +
-                                " renderer=" + (renderer != null && renderer.enabled) +
-                                " registered=" + (renderer != null &&
-                                                  PostMeshRenderer.renderers.ContainsValue(renderer)) +
-                                " " + where);
-            }
-        }
-    }
 }

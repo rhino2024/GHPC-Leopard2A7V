@@ -1,398 +1,371 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 using GHPC.Camera;
 using GHPC.Equipment.Optics;
 using MelonLoader;
 using UnityEngine;
 
-namespace Leopard2A7V
+namespace Leopard2A7V;
+
+public class LpSightView : MonoBehaviour
 {
-    /// <summary>
-    /// GHPC looks through an optic by moving the main camera onto the CameraSlot that optic owns, and the
-    /// donor's turret is cast with a moulded channel around each eyepiece. The imported one is solid there,
-    /// so without this the sight view is a flat olive wash with the reticle buried behind the panel: the
-    /// FERO Z18 eyepiece at (0.31, 1.90, 2.88) in unit frame sits 0.13 m from the imported barrel.
-    ///
-    /// The imported art is therefore cleared out of the way of an eyepiece view, which is done by scaling
-    /// its pivots rather than by disabling renderers, because something in the vehicle's own visibility
-    /// pass keeps switching renderers back on. Same trick CameraSlot.ZeroScaleItems uses.
-    ///
-    /// Only of an eyepiece, though. The commander's head-out slot is the camera standing in his own cupola,
-    /// so the roof fittings are part of what he should see there - the loader's AA MG3, its mount and the
-    /// belt box sit a metre and a half to port of him. Clearing them there as well used to leave that view
-    /// without the machine gun that third person clearly showed.
-    ///
-    /// The donor's daylight channel is also authored as one fixed field of view, so the gunner cannot
-    /// magnify at all: CycleZoom returns on the spot unless OtherFovs has an entry, and only the thermal
-    /// channel is given any. The 2A7V's gunner sight gets the steps the real 12x channel needs here.
-    /// </summary>
-    public class LpSightView : MonoBehaviour
-    {
-        private Transform _unitRoot;
-        private Transform[] _art = Array.Empty<Transform>();
-        private readonly Dictionary<CameraSlot, bool> _logged = new Dictionary<CameraSlot, bool>();
-        private Transform _pendingEye;
-        private float _pendingAt;
-        private bool _warned;
-        private bool _artVisible = true;
+	private Transform _unitRoot;
 
-        /// <summary>
-        /// True while Attach is building this component, which is the difference between a sight view that is
-        /// being set up now and one that arrived on a clone with its state already serialized.
-        /// </summary>
-        private static bool _building;
+	private Transform[] _art = Array.Empty<Transform>();
 
-        public static void Attach(GameObject unitRoot, LpVisual.Assembly art)
-        {
-            if (unitRoot == null || art == null) return;
-            LpSightView view = unitRoot.GetComponent<LpSightView>();
-            _building = true;
-            try
-            {
-                if (view == null) view = unitRoot.AddComponent<LpSightView>();
-                view.Setup(unitRoot.transform, art);
-            }
-            finally
-            {
-                _building = false;
-            }
-        }
+	private readonly Dictionary<CameraSlot, bool> _logged = new Dictionary<CameraSlot, bool>();
 
-        /// <summary>Nudges the commander's camera slot so his own cupola fittings stay out of the frame.</summary>
-        public static void ShiftCommanderSlot(Transform unitRoot)
-        {
-            Vector3 shift = LpConfig.CommanderView;
-            if (shift == Vector3.zero) return;
+	private Vector3[] _restScales = Array.Empty<Vector3>();
 
-            var slots = new List<CameraSlot>();
-            foreach (CameraSlot slot in unitRoot.GetComponentsInChildren<CameraSlot>(true))
-                if (IsCommanderSlot(slot.transform, unitRoot)) slots.Add(slot);
+	private bool _warned;
 
-            foreach (CameraSlot slot in slots)
-            {
-                // A slot mounted on another commander slot travels with it, so nudging both doubles the move.
-                if (IsBelowAny(slot.transform, slots)) continue;
+	private bool _artVisible = true;
 
-                Transform node = slot.transform;
-                node.position += unitRoot.TransformDirection(shift);
-                MelonLogger.Msg($"[L2A7V] commander view {PathOf(node, unitRoot)} moved by " +
-                                $"({shift.x:F2},{shift.y:F2},{shift.z:F2}) m in unit frame");
-            }
-        }
+	private static bool _building;
 
-        /// <summary>Gives the gunner's daylight optic the magnification steps the real sight has.</summary>
-        public static void AddGunSightZoom(Transform unitRoot)
-        {
-            foreach (CameraSlot slot in unitRoot.GetComponentsInChildren<CameraSlot>(true))
-            {
-                if (slot.IsExterior || slot.VisionType != NightVisionType.None) continue;
-                // The cupola machine gun's eyepiece is a clone of the donor's, built to one authored field,
-                // and its reticle plate is drawn to fill exactly that.
-                if (IsRoofGunSlot(slot.transform)) continue;
-                // The thermal channel already steps (9 -> 2.5), and re-running this on a converted template
-                // must not keep appending steps to the same slot.
-                if (slot.OtherFovs != null && slot.OtherFovs.Length != 0) continue;
+	public static void Attach(GameObject unitRoot, LpVisual.Assembly art)
+	{
+		if (unitRoot == null || art == null)
+		{
+			return;
+		}
+		LpSightView lpSightView = unitRoot.GetComponent<LpSightView>();
+		_building = true;
+		try
+		{
+			if (lpSightView == null)
+			{
+				lpSightView = unitRoot.AddComponent<LpSightView>();
+			}
+			lpSightView.Setup(unitRoot.transform, art);
+		}
+		finally
+		{
+			_building = false;
+		}
+	}
 
-                float[] levels = ZoomLevels(slot.DefaultFov);
-                slot.OtherFovs = levels;
-                MelonLogger.Msg($"[L2A7V] gunner sight {PathOf(slot.transform, unitRoot)} can now zoom " +
-                                $"{slot.DefaultFov:0.#} / {string.Join(" / ", levels)} deg");
-            }
-        }
+	public static void ShiftCommanderSlot(Transform unitRoot)
+	{
+		Vector3 commanderView = LpConfig.CommanderView;
+		if (commanderView == Vector3.zero)
+		{
+			return;
+		}
+		List<CameraSlot> list = new List<CameraSlot>();
+		CameraSlot[] componentsInChildren = unitRoot.GetComponentsInChildren<CameraSlot>(includeInactive: true);
+		foreach (CameraSlot cameraSlot in componentsInChildren)
+		{
+			if (IsCommanderSlot(cameraSlot.transform, unitRoot))
+			{
+				list.Add(cameraSlot);
+			}
+		}
+		foreach (CameraSlot item in list)
+		{
+			if (!IsBelowAny(item.transform, list))
+			{
+				Transform transform = item.transform;
+				transform.position += unitRoot.TransformDirection(commanderView);
+				MelonLogger.Msg("[L2A7V] commander view " + PathOf(transform, unitRoot) + " moved by " + $"({commanderView.x:F2},{commanderView.y:F2},{commanderView.z:F2}) m in unit frame");
+			}
+		}
+	}
 
-        /// <summary>
-        /// The steps to hand a daylight eyepiece, from the field it opens with. The donor authors its
-        /// daylight channel as one fixed field of view, so CycleZoom returns on the spot unless OtherFovs
-        /// holds an entry and only the thermal channel is given any.
-        ///
-        /// A wide eyepiece gets the intermediate step as well, the way the real 12x channel walks, and a
-        /// narrow one is already the high power of its sight, so it gets the single deeper step the game
-        /// uses for its thermals (9 -> 2.5) and for the T-64B's 1G42 (20 -> 8.4). fovAspect keeps
-        /// CurrentFov horizontal whatever the window's aspect ratio, so these stay horizontal degrees.
-        /// </summary>
-        private static float[] ZoomLevels(float baseFov)
-        {
-            if (baseFov > 8f) return new[] { baseFov * 0.75f, baseFov * 0.5f };
-            return new[] { baseFov * 0.5f };
-        }
+	public static void AddGunSightZoom(Transform unitRoot)
+	{
+		CameraSlot[] componentsInChildren = unitRoot.GetComponentsInChildren<CameraSlot>(includeInactive: true);
+		foreach (CameraSlot cameraSlot in componentsInChildren)
+		{
+			if (!cameraSlot.IsExterior && cameraSlot.VisionType == NightVisionType.None && !IsRoofGunSlot(cameraSlot.transform) && (cameraSlot.OtherFovs == null || cameraSlot.OtherFovs.Length == 0))
+			{
+				float[] values = (cameraSlot.OtherFovs = ZoomLevels(cameraSlot.DefaultFov));
+				MelonLogger.Msg("[L2A7V] gunner sight " + PathOf(cameraSlot.transform, unitRoot) + " can now zoom " + string.Format("{0:0.#} / {1} deg", cameraSlot.DefaultFov, string.Join(" / ", values)));
+			}
+		}
+	}
 
-        /// <summary>
-        /// Both of the turret's daylight channels are the gunner's: the FERO Z18 hangs off the main gun's
-        /// script group and the GPS optic off the turret's, and which one the player is looking through is
-        /// not something the hierarchy announces.
-        /// </summary>
-        private static bool IsRoofGunSlot(Transform node)
-        {
-            while (node != null)
-            {
-                string name = node.name.ToLowerInvariant();
-                if (name.Contains("roofgun") || name.Contains("roof gun")) return true;
-                node = node.parent;
-            }
-            return false;
-        }
+	private static float[] ZoomLevels(float baseFov)
+	{
+		if (!(baseFov > 8f))
+		{
+			return new float[1] { baseFov * 0.5f };
+		}
+		return new float[2]
+		{
+			baseFov * 0.75f,
+			baseFov * 0.5f
+		};
+	}
 
-        private void Setup(Transform unitRoot, LpVisual.Assembly art)
-        {
-            _unitRoot = unitRoot;
-            var pieces = new List<Transform>();
-            Add(pieces, art.Hull);
-            Add(pieces, art.Turret);
-            Add(pieces, art.Gun);
-            Add(pieces, art.CommanderGear);
-            // The sight head is separate art (it turns with the commander's view), and the commander's night
-            // channel now looks through it: left out of this list it sits right in front of that eyepiece.
-            Add(pieces, art.CommanderSight);
-            Add(pieces, art.RoofGunYawArt);
-            Add(pieces, art.RoofGunPitchArt);
-            _art = pieces.ToArray();
+	private static bool IsRoofGunSlot(Transform node)
+	{
+		while (node != null)
+		{
+			string text = node.name.ToLowerInvariant();
+			if (text.Contains("roofgun") || text.Contains("roof gun"))
+			{
+				return true;
+			}
+			node = node.parent;
+		}
+		return false;
+	}
 
-            ShiftCommanderSlot(unitRoot);
-            AddGunSightZoom(unitRoot);
-            Apply(CameraSlot.ActiveInstance);
-        }
+	private void Setup(Transform unitRoot, LpVisual.Assembly art)
+	{
+		_unitRoot = unitRoot;
+		List<Transform> list = new List<Transform>();
+		Add(list, art.Hull);
+		Add(list, art.Turret);
+		Add(list, art.Gun);
+		Add(list, art.CommanderGear);
+		Add(list, art.CommanderSight);
+		Add(list, art.RoofGunYawArt);
+		Add(list, art.RoofGunPitchArt);
+		_art = list.ToArray();
+		CacheRestScales();
+		ShiftCommanderSlot(unitRoot);
+		AddGunSightZoom(unitRoot);
+		Apply(CameraSlot.ActiveInstance);
+	}
 
-        private static void Add(List<Transform> list, Transform node)
-        {
-            if (node != null) list.Add(node);
-        }
+	private static void Add(List<Transform> list, Transform node)
+	{
+		if (node != null)
+		{
+			list.Add(node);
+		}
+	}
 
-        private void OnEnable()
-        {
-            CameraSlot.ActiveInstanceChanged += HandleSlotChanged;
-            if (!_building) Recover();
-            Apply(CameraSlot.ActiveInstance);
-        }
+	private void OnEnable()
+	{
+		CameraSlot.ActiveInstanceChanged += HandleSlotChanged;
+		if (!_building)
+		{
+			Recover();
+		}
+		Apply(CameraSlot.ActiveInstance);
+	}
 
-        private void OnDisable()
-        {
-            CameraSlot.ActiveInstanceChanged -= HandleSlotChanged;
-            Apply(null);
-        }
+	private void OnDisable()
+	{
+		CameraSlot.ActiveInstanceChanged -= HandleSlotChanged;
+		Apply(null);
+	}
 
-        /// <summary>
-        /// A unit that arrives from the converted template never runs Setup, because its art was built on the
-        /// template and the clone inherits it as serialized data. The pivot list and the unit root are the two
-        /// things this pass needs from that data, and if either did not survive Instantiate the imported panels
-        /// stay full size in front of the gunner's eyepiece - which is what a second mission in one session
-        /// showed as nothing but the inside of his own turret. So the state is reported and, when it is missing,
-        /// rebuilt from the names Convert gave the pivots.
-        /// </summary>
-        private void Recover()
-        {
-            if (_unitRoot == null) _unitRoot = transform;
+	private void Recover()
+	{
+		if (_unitRoot == null)
+		{
+			_unitRoot = base.transform;
+		}
+		int num = 0;
+		if (_art != null)
+		{
+			for (int i = 0; i < _art.Length; i++)
+			{
+				if (_art[i] != null)
+				{
+					num++;
+				}
+			}
+		}
+		if (num != 0)
+		{
+			MelonLogger.Msg($"[L2A7V] sight view on {_unitRoot.name}: {num}/{_art.Length} art " + $"pivot(s) carried over from the template, art visible={_artVisible}");
+			return;
+		}
+		List<Transform> list = new List<Transform>();
+		Add(list, FindDeep(_unitRoot, "L2A7V_HullPivot"));
+		Add(list, FindDeep(_unitRoot, "L2A7V_TurretPivot"));
+		Add(list, FindDeep(_unitRoot, "L2A7V_GunPivot"));
+		Add(list, FindDeep(_unitRoot, "L2A7V_CupolaPivot"));
+		Add(list, FindDeep(_unitRoot, "L2A7V_CmdSightPivot"));
+		Add(list, FindDeep(_unitRoot, "RoofGunMount"));
+		Add(list, FindDeep(_unitRoot, "RoofGunReceiver"));
+		_art = list.ToArray();
+		CacheRestScales();
+		MelonLogger.Warning("[L2A7V] sight view on " + _unitRoot.name + " arrived with no art pivots, " + $"re-found {_art.Length} of them by name");
+	}
 
-            int live = 0;
-            if (_art != null)
-                for (int i = 0; i < _art.Length; i++)
-                    if (_art[i] != null) live++;
+	private static Transform FindDeep(Transform node, string name)
+	{
+		if (node == null)
+		{
+			return null;
+		}
+		if (node.name == name)
+		{
+			return node;
+		}
+		for (int i = 0; i < node.childCount; i++)
+		{
+			Transform transform = FindDeep(node.GetChild(i), name);
+			if (transform != null)
+			{
+				return transform;
+			}
+		}
+		return null;
+	}
 
-            if (live != 0)
-            {
-                MelonLogger.Msg($"[L2A7V] sight view on {_unitRoot.name}: {live}/{_art.Length} art " +
-                                $"pivot(s) carried over from the template, art visible={_artVisible}");
-                return;
-            }
+	private void HandleSlotChanged(CameraSlot slot)
+	{
+		Apply(slot);
+	}
 
-            var pieces = new List<Transform>();
-            Add(pieces, FindDeep(_unitRoot, "L2A7V_HullPivot"));
-            Add(pieces, FindDeep(_unitRoot, "L2A7V_TurretPivot"));
-            Add(pieces, FindDeep(_unitRoot, "L2A7V_GunPivot"));
-            Add(pieces, FindDeep(_unitRoot, "L2A7V_CupolaPivot"));
-            Add(pieces, FindDeep(_unitRoot, "L2A7V_CmdSightPivot"));
-            Add(pieces, FindDeep(_unitRoot, "RoofGunMount"));
-            Add(pieces, FindDeep(_unitRoot, "RoofGunReceiver"));
-            _art = pieces.ToArray();
+	private void Apply(CameraSlot slot)
+	{
+		int num;
+		int num2;
+		if (slot != null && _unitRoot != null)
+		{
+			num = (IsBelow(slot.transform, _unitRoot) ? 1 : 0);
+			if (num != 0)
+			{
+				num2 = ((!slot.IsExterior) ? 1 : 0);
+				goto IL_003a;
+			}
+		}
+		else
+		{
+			num = 0;
+		}
+		num2 = 0;
+		goto IL_003a;
+		IL_003a:
+		bool flag = (byte)num2 != 0;
+		if (_artVisible != !flag)
+		{
+			_artVisible = !flag;
+			if (!_artVisible && !_warned)
+			{
+				_warned = true;
+				MelonLogger.Msg("[L2A7V] clearing the imported art out of the eyepiece");
+			}
+		}
+		Enforce();
+		if (num != 0)
+		{
+			Log(slot, flag);
+		}
+	}
 
-            MelonLogger.Warning($"[L2A7V] sight view on {_unitRoot.name} arrived with no art pivots, " +
-                                $"re-found {_art.Length} of them by name");
-        }
+	private void CacheRestScales()
+	{
+		if (_restScales.Length != _art.Length)
+		{
+			_restScales = new Vector3[_art.Length];
+		}
+		for (int i = 0; i < _art.Length; i++)
+		{
+			if (_art[i] != null)
+			{
+				_restScales[i] = RestScale(_art[i]);
+			}
+		}
+	}
 
-        private static Transform FindDeep(Transform node, string name)
-        {
-            if (node == null) return null;
-            if (node.name == name) return node;
-            for (int i = 0; i < node.childCount; i++)
-            {
-                Transform found = FindDeep(node.GetChild(i), name);
-                if (found != null) return found;
-            }
-            return null;
-        }
+	private void Enforce()
+	{
+		SetVisible(_art, _restScales, _artVisible);
+	}
 
-        private void HandleSlotChanged(CameraSlot slot)
-        {
-            Apply(slot);
-        }
+	private static void SetVisible(Transform[] pivots, Vector3[] restScales, bool visible)
+	{
+		for (int i = 0; i < pivots.Length; i++)
+		{
+			Transform transform = pivots[i];
+			if (!(transform == null))
+			{
+				Vector3 vector = (visible ? ((restScales != null && i < restScales.Length) ? restScales[i] : RestScale(transform)) : Vector3.zero);
+				if (!(transform.localScale == vector))
+				{
+					transform.localScale = vector;
+				}
+			}
+		}
+	}
 
-        private void Apply(CameraSlot slot)
-        {
-            bool mine = slot != null && _unitRoot != null && IsBelow(slot.transform, _unitRoot);
-            bool eyepiece = mine && !slot.IsExterior;
+	private static Vector3 RestScale(Transform pivot)
+	{
+		Transform parent = pivot.parent;
+		if (parent == null)
+		{
+			return Vector3.one;
+		}
+		Vector3 lossyScale = parent.lossyScale;
+		return new Vector3(Reciprocal(lossyScale.x), Reciprocal(lossyScale.y), Reciprocal(lossyScale.z));
+	}
 
-            if (_artVisible != !eyepiece)
-            {
-                _artVisible = !eyepiece;
-                if (!_artVisible && !_warned)
-                {
-                    _warned = true;
-                    MelonLogger.Msg("[L2A7V] clearing the imported art out of the eyepiece");
-                }
-            }
-            Enforce();
+	private static float Reciprocal(float value)
+	{
+		if (!(Mathf.Abs(value) < 1E-05f))
+		{
+			return 1f / value;
+		}
+		return 1f;
+	}
 
-            if (mine) Log(slot, eyepiece);
-        }
+	private void Log(CameraSlot slot, bool eyepiece)
+	{
+		if (!_logged.ContainsKey(slot))
+		{
+			_logged[slot] = eyepiece;
+			Vector3 vector = _unitRoot.InverseTransformPoint(slot.transform.position);
+			Camera mainCam = CameraManager.MainCam;
+			MelonLogger.Msg("[L2A7V] sight slot " + PathOf(slot.transform, _unitRoot) + " " + $"exterior={slot.IsExterior} fov={slot.DefaultFov:F0} " + $"vision={slot.VisionType} " + "hiddenArt=" + (eyepiece ? "all" : "none") + " " + $"unit-local=({vector.x:F2},{vector.y:F2},{vector.z:F2}) " + $"camMask={((mainCam == null) ? (-1) : mainCam.cullingMask)}");
+			// Scene-wide renderer occlusion diagnostics are disabled in normal builds.
 
-        /// <summary>
-        /// A pivot scaled to nothing draws nothing however often another system re-enables its renderers,
-        /// and the game's own visibility passes do change scale too, so the wanted state is re-asserted
-        /// every frame rather than once per slot switch.
-        /// </summary>
-        private void LateUpdate()
-        {
-            Enforce();
-            if (_pendingEye != null && Time.unscaledTime >= _pendingAt)
-            {
-                ReportOccluders(_pendingEye);
-                _pendingEye = null;
-            }
-        }
+		}
+	}
 
-        private void Enforce()
-        {
-            SetVisible(_art, _artVisible);
-        }
+	private static bool IsCommanderSlot(Transform node, Transform unitRoot)
+	{
+		string text = PathOf(node, unitRoot).ToLowerInvariant();
+		if (!text.Contains("command"))
+		{
+			return text.Contains("cupola");
+		}
+		return true;
+	}
 
-        private static void SetVisible(Transform[] pivots, bool visible)
-        {
-            foreach (Transform pivot in pivots)
-            {
-                if (pivot == null) continue;
-                Vector3 target = visible ? RestScale(pivot) : Vector3.zero;
-                if (pivot.localScale == target) continue;
-                pivot.localScale = target;
-            }
-        }
+	private static bool IsBelowAny(Transform node, List<CameraSlot> others)
+	{
+		foreach (CameraSlot other in others)
+		{
+			if ((object)other.transform != node && IsBelow(node, other.transform))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
 
-        /// <summary>
-        /// The rest scale is the one the pivot was built with, which is the inverse of its drive bone's
-        /// lossy scale rather than a plain one.
-        /// </summary>
-        private static Vector3 RestScale(Transform pivot)
-        {
-            Transform bone = pivot.parent;
-            if (bone == null) return Vector3.one;
-            Vector3 s = bone.lossyScale;
-            return new Vector3(Reciprocal(s.x), Reciprocal(s.y), Reciprocal(s.z));
-        }
+	private static bool IsBelow(Transform node, Transform ancestor)
+	{
+		while (node != null)
+		{
+			if (node == ancestor)
+			{
+				return true;
+			}
+			node = node.parent;
+		}
+		return false;
+	}
 
-        private static float Reciprocal(float value)
-        {
-            return Mathf.Abs(value) < 1e-5f ? 1f : 1f / value;
-        }
-
-        private void Log(CameraSlot slot, bool eyepiece)
-        {
-            if (_logged.ContainsKey(slot)) return;
-            _logged[slot] = eyepiece;
-
-            Vector3 local = _unitRoot.InverseTransformPoint(slot.transform.position);
-            UnityEngine.Camera cam = CameraManager.MainCam;
-            MelonLogger.Msg($"[L2A7V] sight slot {PathOf(slot.transform, _unitRoot)} " +
-                            $"exterior={slot.IsExterior} fov={slot.DefaultFov:F0} " +
-                            $"vision={slot.VisionType} " +
-                            $"hiddenArt={(eyepiece ? "all" : "none")} " +
-                            $"unit-local=({local.x:F2},{local.y:F2},{local.z:F2}) " +
-                            $"camMask={(cam == null ? -1 : cam.cullingMask)}");
-            _pendingEye = slot.transform;
-            _pendingAt = Time.unscaledTime + 0.35f;
-        }
-
-        /// <summary>
-        /// Names whatever is still drawn in front of the eyepiece, the only way to tell our own art apart
-        /// from the donor's sight tube or a game overlay when a view still looks wrong.
-        /// </summary>
-        private void ReportOccluders(Transform eye)
-        {
-            Renderer[] all = FindObjectsOfType<Renderer>();
-            int reported = 0;
-            for (int i = 0; i < all.Length && reported < 8; i++)
-            {
-                Renderer renderer = all[i];
-                if (renderer == null || !renderer.enabled || !renderer.gameObject.activeInHierarchy) continue;
-                Bounds bounds = renderer.bounds;
-                if (bounds.size.sqrMagnitude > 100f) continue;
-                for (float distance = 0.05f; distance <= 4f; distance *= 1.6f)
-                {
-                    if (!bounds.Contains(eye.position + eye.forward * distance)) continue;
-                    MelonLogger.Msg($"[L2A7V]   in {PathOf(eye, _unitRoot)} view: " +
-                                    $"{PathOf(renderer.transform, null)} at {distance:F2} m, layer " +
-                                    $"{renderer.gameObject.layer}, ours={IsOurArt(renderer.transform)}" +
-                                    DescribeMaterial(renderer));
-                    reported++;
-                    break;
-                }
-            }
-            if (reported == 0) MelonLogger.Msg("[L2A7V]   nothing at all is drawn in front of it");
-        }
-
-        private static bool IsOurArt(Transform node)
-        {
-            return LpVisual.IsImportedArt(node);
-        }
-
-        /// <summary>
-        /// The material is what tells a painted hull panel, the donor's optic lens and a game overlay
-        /// apart, and those three need completely different fixes.
-        /// </summary>
-        private static string DescribeMaterial(Renderer renderer)
-        {
-            var builder = new System.Text.StringBuilder();
-            Material[] materials = renderer.sharedMaterials;
-            for (int i = 0; i < materials.Length && i < 3; i++)
-            {
-                Material material = materials[i];
-                if (material == null) continue;
-                builder.Append(", mat ").Append(material.name)
-                    .Append("/").Append(material.shader == null ? "?" : material.shader.name);
-            }
-            return builder.ToString();
-        }
-
-        private static bool IsCommanderSlot(Transform node, Transform unitRoot)
-        {
-            string path = PathOf(node, unitRoot).ToLowerInvariant();
-            return path.Contains("command") || path.Contains("cupola");
-        }
-
-        private static bool IsBelowAny(Transform node, List<CameraSlot> others)
-        {
-            foreach (CameraSlot other in others)
-                if (!ReferenceEquals(other.transform, node) && IsBelow(node, other.transform)) return true;
-            return false;
-        }
-
-        private static bool IsBelow(Transform node, Transform ancestor)
-        {
-            while (node != null)
-            {
-                if (node == ancestor) return true;
-                node = node.parent;
-            }
-            return false;
-        }
-
-        private static string PathOf(Transform node, Transform unitRoot)
-        {
-            var names = new List<string>();
-            while (node != null && node != unitRoot)
-            {
-                names.Add(node.name);
-                node = node.parent;
-            }
-            names.Reverse();
-            return string.Join("/", names);
-        }
-    }
+	private static string PathOf(Transform node, Transform unitRoot)
+	{
+		List<string> list = new List<string>();
+		while (node != null && node != unitRoot)
+		{
+			list.Add(node.name);
+			node = node.parent;
+		}
+		list.Reverse();
+		return string.Join("/", list);
+	}
 }

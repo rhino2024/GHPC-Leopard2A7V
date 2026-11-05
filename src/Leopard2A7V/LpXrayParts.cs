@@ -6,270 +6,304 @@ using System.Threading.Tasks;
 using MelonLoader;
 using UnityEngine;
 
-namespace Leopard2A7V
+namespace Leopard2A7V;
+
+public static class LpXrayParts
 {
-    /// <summary>
-    /// The War Thunder x-ray export (Interior.obj): the armour arrays and the compartment modules, in the same
-    /// frame and scale as the exterior art.
-    ///
-    /// This is the L2A7HU mod's parser, and the whole point of it is that one file feeds two consumers:
-    /// <see cref="LpArmorOverlay"/> takes the arrays the visible plates do not cover, and <see cref="LpInterior"/>
-    /// takes the compartment itself. Keeping the armour here instead of in a baked mesh is what lets an array
-    /// be named, classified and given its own zone at the point it is read, rather than looked up by a string
-    /// that has to keep matching a binary.
-    ///
-    /// The export's axes are the exterior model's: +X forward, +Y up, +Z starboard. ObjModel swaps X and Z once
-    /// for GHPC; this parser does the same, which is why the module centres land inside the hull with no second
-    /// calibration.
-    /// </summary>
-    public static class LpXrayParts
-    {
-        private const string Tag = "[L2A7V]";
+	public sealed class Part
+	{
+		public string Name;
 
-        public static volatile bool Loaded;
-        public static volatile bool Failed;
-        public static string Error;
+		public string Bone;
 
-        public sealed class Part
-        {
-            public string Name;
-            public string Bone;
-            public string Class;
-            public Vector3[] Positions;
-            public Vector3[] Normals;
-            public int[] Triangles;
-            public Vector3 Center;
-            public Vector3 Size;
-        }
+		public string Class;
 
-        public static readonly List<Part> Parts = new List<Part>();
+		public Vector3[] Positions;
 
-        public static int Triangles
-        {
-            get
-            {
-                int total = 0;
-                foreach (Part part in Parts) total += part.Triangles.Length / 3;
-                return total;
-            }
-        }
+		public Vector3[] Normals;
 
-        public static void Preload(string directory)
-        {
-            string path = Path.Combine(directory, "Interior.obj");
-            if (!File.Exists(path))
-            {
-                Failed = true;
-                MelonLogger.Msg(Tag + " no Interior.obj beside the art; the x-ray armour and compartment stay out");
-                return;
-            }
+		public int[] Triangles;
 
-            Task.Run(() =>
-            {
-                try
-                {
-                    Parse(path);
-                    Loaded = true;
-                }
-                catch (Exception ex)
-                {
-                    Error = ex.Message;
-                    Failed = true;
-                    MelonLogger.Error(Tag + " x-ray parse failed: " + ex);
-                }
-            });
-        }
+		public Vector3 Center;
 
-        private sealed class Builder
-        {
-            public string Name;
-            public readonly List<Vector3> Positions = new List<Vector3>();
-            public readonly List<Vector3> Normals = new List<Vector3>();
-            public readonly List<int> Triangles = new List<int>();
-            public readonly Dictionary<long, int> Map = new Dictionary<long, int>();
-        }
+		public Vector3 Size;
+	}
 
-        private static void Parse(string path)
-        {
-            var positions = new List<Vector3>();
-            var normals = new List<Vector3>();
-            var builders = new List<Builder>();
-            Builder active = null;
+	private sealed class Builder
+	{
+		public string Name;
 
-            using (var reader = new StreamReader(path))
-            {
-                string line;
-                while ((line = reader.ReadLine()) != null)
-                {
-                    if (line.Length < 3 || line[0] == '#') continue;
-                    char second = line[1];
-                    if (line[0] == 'v' && second == ' ')
-                    {
-                        positions.Add(ReadVector(line));
-                    }
-                    else if (line[0] == 'v' && second == 'n' && line[2] == ' ')
-                    {
-                        normals.Add(ReadVector(line));
-                    }
-                    else if ((line[0] == 'g' || line[0] == 'o') && second == ' ')
-                    {
-                        active = new Builder { Name = line.Substring(2).Trim() };
-                        builders.Add(active);
-                    }
-                    else if (line[0] == 'f' && second == ' ')
-                    {
-                        if (active == null)
-                        {
-                            active = new Builder { Name = "xray" };
-                            builders.Add(active);
-                        }
-                        ReadFace(line, active, positions, normals);
-                    }
-                }
-            }
+		public readonly List<Vector3> Positions = new List<Vector3>();
 
-            foreach (Builder builder in builders)
-            {
-                if (builder.Triangles.Count < 3) continue;
-                var part = new Part
-                {
-                    Name = builder.Name,
-                    Positions = builder.Positions.ToArray(),
-                    Normals = builder.Normals.ToArray(),
-                    Triangles = builder.Triangles.ToArray(),
-                };
-                Measure(part);
-                Classify(part);
-                Parts.Add(part);
-            }
+		public readonly List<Vector3> Normals = new List<Vector3>();
 
-            int armour = 0, modules = 0;
-            foreach (Part part in Parts)
-            {
-                if (part.Class == "int_armor") armour += part.Triangles.Length / 3;
-                else modules += part.Triangles.Length / 3;
-            }
-            MelonLogger.Msg(Tag + " x-ray parsed: " + Parts.Count + " module(s) / " + Triangles +
-                            " triangles (" + armour + " armour shell, " + modules + " compartment) from " + path);
-        }
+		public readonly List<int> Triangles = new List<int>();
 
-        private static Vector3 ReadVector(string line)
-        {
-            string[] p = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-            float x = ParseFloat(p, 1);
-            float y = ParseFloat(p, 2);
-            float z = ParseFloat(p, 3);
-            // The export is +X forward / +Z starboard; GHPC is +Z forward / +X starboard.
-            return new Vector3(z, y, x);
-        }
+		public readonly Dictionary<long, int> Map = new Dictionary<long, int>();
+	}
 
-        private static float ParseFloat(string[] tokens, int index)
-        {
-            if (index >= tokens.Length) return 0f;
-            float value;
-            return float.TryParse(tokens[index], NumberStyles.Float, CultureInfo.InvariantCulture, out value)
-                ? value
-                : 0f;
-        }
+	private const string Tag = "[L2A7V]";
 
-        private static void ReadFace(string line, Builder builder, List<Vector3> positions, List<Vector3> normals)
-        {
-            string[] tokens = line.Substring(2).Split(
-                new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-            if (tokens.Length < 3) return;
+	public static volatile bool Loaded;
 
-            var corners = new int[tokens.Length];
-            for (int i = 0; i < tokens.Length; i++)
-            {
-                string[] parts = tokens[i].Split('/');
-                int vertex = IndexOf(parts, 0, positions.Count);
-                int normal = parts.Length > 2 && parts[2].Length > 0 ? IndexOf(parts, 2, normals.Count) : -1;
-                corners[i] = AddCorner(builder, vertex, normal, positions, normals);
-            }
-            for (int i = 2; i < corners.Length; i++)
-            {
-                // Swapping the axes mirrors the geometry, so the winding is reversed to keep faces outward.
-                builder.Triangles.Add(corners[0]);
-                builder.Triangles.Add(corners[i]);
-                builder.Triangles.Add(corners[i - 1]);
-            }
-        }
+	public static volatile bool Failed;
 
-        private static int AddCorner(Builder builder, int vertex, int normal, List<Vector3> positions,
-            List<Vector3> normals)
-        {
-            long key = ((long)vertex << 32) ^ (uint)normal;
-            int index;
-            if (builder.Map.TryGetValue(key, out index)) return index;
+	public static string Error;
 
-            index = builder.Positions.Count;
-            builder.Map[key] = index;
-            builder.Positions.Add(positions[Mathf.Clamp(vertex, 0, positions.Count - 1)]);
-            builder.Normals.Add(normal >= 0 && normal < normals.Count ? normals[normal] : Vector3.zero);
-            return index;
-        }
+	public static readonly List<Part> Parts = new List<Part>();
 
-        private static int IndexOf(string[] parts, int slot, int count)
-        {
-            if (parts.Length <= slot) return 0;
-            int value;
-            if (!int.TryParse(parts[slot], NumberStyles.Integer, CultureInfo.InvariantCulture, out value))
-                return 0;
-            return value < 0 ? count + value : value - 1;
-        }
+	public static int Triangles
+	{
+		get
+		{
+			int num = 0;
+			foreach (Part part in Parts)
+			{
+				num += part.Triangles.Length / 3;
+			}
+			return num;
+		}
+	}
 
-        private static void Measure(Part part)
-        {
-            Vector3 min = part.Positions[0];
-            Vector3 max = min;
-            for (int i = 1; i < part.Positions.Length; i++)
-            {
-                min = Vector3.Min(min, part.Positions[i]);
-                max = Vector3.Max(max, part.Positions[i]);
-            }
-            part.Center = (min + max) * 0.5f;
-            part.Size = max - min;
-        }
+	public static void Preload(string directory)
+	{
+		string path = Path.Combine(directory, "Interior.obj");
+		if (!File.Exists(path))
+		{
+			Failed = true;
+			MelonLogger.Msg("[L2A7V] no Interior.obj beside the art; the x-ray armour and compartment stay out");
+			return;
+		}
+		Task.Run(delegate
+		{
+			try
+			{
+				Parse(path);
+				Loaded = true;
+			}
+			catch (Exception ex)
+			{
+				Error = ex.Message;
+				Failed = true;
+				MelonLogger.Error("[L2A7V] x-ray parse failed: " + ex);
+			}
+		});
+	}
 
-        private static void Classify(Part part)
-        {
-            string name = part.Name.ToLowerInvariant();
-            part.Bone = BoneFor(name);
-            part.Class = ClassFor(name);
-        }
+	private static void Parse(string path)
+	{
+		List<Vector3> list = new List<Vector3>();
+		List<Vector3> list2 = new List<Vector3>();
+		List<Builder> list3 = new List<Builder>();
+		Builder builder = null;
+		using (StreamReader streamReader = new StreamReader(path))
+		{
+			string text;
+			while ((text = streamReader.ReadLine()) != null)
+			{
+				if (text.Length < 3 || text[0] == '#')
+				{
+					continue;
+				}
+				char c = text[1];
+				if (text[0] == 'v' && c == ' ')
+				{
+					list.Add(ReadVector(text));
+				}
+				else if (text[0] == 'v' && c == 'n' && text[2] == ' ')
+				{
+					list2.Add(ReadVector(text));
+				}
+				else if ((text[0] == 'g' || text[0] == 'o') && c == ' ')
+				{
+					builder = new Builder
+					{
+						Name = text.Substring(2).Trim()
+					};
+					list3.Add(builder);
+				}
+				else if (text[0] == 'f' && c == ' ')
+				{
+					if (builder == null)
+					{
+						builder = new Builder
+						{
+							Name = "xray"
+						};
+						list3.Add(builder);
+					}
+					ReadFace(text, builder, list, list2);
+				}
+			}
+		}
+		foreach (Builder item in list3)
+		{
+			if (item.Triangles.Count >= 3)
+			{
+				Part part = new Part
+				{
+					Name = item.Name,
+					Positions = item.Positions.ToArray(),
+					Normals = item.Normals.ToArray(),
+					Triangles = item.Triangles.ToArray()
+				};
+				Measure(part);
+				Classify(part);
+				Parts.Add(part);
+			}
+		}
+		int num = 0;
+		int num2 = 0;
+		foreach (Part part2 in Parts)
+		{
+			if (part2.Class == "int_armor")
+			{
+				num += part2.Triangles.Length / 3;
+			}
+			else
+			{
+				num2 += part2.Triangles.Length / 3;
+			}
+		}
+		MelonLogger.Msg("[L2A7V] x-ray parsed: " + Parts.Count + " module(s) / " + Triangles + " triangles (" + num + " armour shell, " + num2 + " compartment) from " + path);
+	}
 
-        /// <summary>Which pivot the module rides. The breech and the main barrel recoil with the gun; the
-        /// roof machine-gun barrel and the gunner's sight head sit on the turret roof and turn with it, not
-        /// with the gun. Everything else with "turret" in it turns with the turret, the rest is hull-side.</summary>
-        private static string BoneFor(string name)
-        {
-            if (name.Contains("cannon_breech") || name.Contains("gun_barrel_01")) return "Gun";
-            if (name.Contains("gun_barrel_02") || name.Contains("optic_gun")) return "Turret";
-            if (name.Contains("turret") || name.Contains("commander") || name.Contains("gunner") ||
-                name.Contains("loader") || name.Contains("fire_control") || name.Contains("radio") ||
-                name.Contains("drive_turret"))
-                return "Turret";
-            return "Hull";
-        }
+	private static Vector3 ReadVector(string line)
+	{
+		string[] tokens = line.Split(new char[2] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+		return new Vector3(z: ParseFloat(tokens, 1), y: ParseFloat(tokens, 2), x: ParseFloat(tokens, 3));
+	}
 
-        /// <summary>Colour class for the x-ray picture, the same grouping the donor's compartment sheets
-        /// quantise to (armour, liner, engine, fire control, ammunition, crew, metal).</summary>
-        private static string ClassFor(string name)
-        {
-            if (name.StartsWith("composite_armor") || name.StartsWith("spall_liner") ||
-                name.StartsWith("firewall_armor"))
-                return "int_armor";
-            if (name.StartsWith("ammo")) return "int_ammo";
-            if (name == "driver_xray" || name == "gunner_xray" || name == "loader_xray" ||
-                name == "commander_xray")
-                return "int_crew";
-            if (name.Contains("engine") || name.Contains("transmission") || name.Contains("radiator") ||
-                name.Contains("power_system"))
-                return "int_engine";
-            if (name.Contains("fire_control") || name.Contains("radio") || name.Contains("optic") ||
-                name.Contains("panoramic") || name.Contains("driver_controls"))
-                return "int_fcs";
-            return "int_metal";
-        }
-    }
+	private static float ParseFloat(string[] tokens, int index)
+	{
+		if (index >= tokens.Length)
+		{
+			return 0f;
+		}
+		if (!float.TryParse(tokens[index], NumberStyles.Float, CultureInfo.InvariantCulture, out var result))
+		{
+			return 0f;
+		}
+		return result;
+	}
+
+	private static void ReadFace(string line, Builder builder, List<Vector3> positions, List<Vector3> normals)
+	{
+		string[] array = line.Substring(2).Split(new char[2] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+		if (array.Length >= 3)
+		{
+			int[] array2 = new int[array.Length];
+			for (int i = 0; i < array.Length; i++)
+			{
+				string[] array3 = array[i].Split(new char[1] { '/' });
+				int vertex = IndexOf(array3, 0, positions.Count);
+				int normal = ((array3.Length > 2 && array3[2].Length > 0) ? IndexOf(array3, 2, normals.Count) : (-1));
+				array2[i] = AddCorner(builder, vertex, normal, positions, normals);
+			}
+			for (int j = 2; j < array2.Length; j++)
+			{
+				builder.Triangles.Add(array2[0]);
+				builder.Triangles.Add(array2[j]);
+				builder.Triangles.Add(array2[j - 1]);
+			}
+		}
+	}
+
+	private static int AddCorner(Builder builder, int vertex, int normal, List<Vector3> positions, List<Vector3> normals)
+	{
+		long key = ((long)vertex << 32) ^ (uint)normal;
+		if (builder.Map.TryGetValue(key, out var value))
+		{
+			return value;
+		}
+		value = builder.Positions.Count;
+		builder.Map[key] = value;
+		builder.Positions.Add(positions[Mathf.Clamp(vertex, 0, positions.Count - 1)]);
+		builder.Normals.Add((normal >= 0 && normal < normals.Count) ? normals[normal] : Vector3.zero);
+		return value;
+	}
+
+	private static int IndexOf(string[] parts, int slot, int count)
+	{
+		if (parts.Length <= slot)
+		{
+			return 0;
+		}
+		if (!int.TryParse(parts[slot], NumberStyles.Integer, CultureInfo.InvariantCulture, out var result))
+		{
+			return 0;
+		}
+		if (result >= 0)
+		{
+			return result - 1;
+		}
+		return count + result;
+	}
+
+	private static void Measure(Part part)
+	{
+		Vector3 vector = part.Positions[0];
+		Vector3 vector2 = vector;
+		for (int i = 1; i < part.Positions.Length; i++)
+		{
+			vector = Vector3.Min(vector, part.Positions[i]);
+			vector2 = Vector3.Max(vector2, part.Positions[i]);
+		}
+		part.Center = (vector + vector2) * 0.5f;
+		part.Size = vector2 - vector;
+	}
+
+	private static void Classify(Part part)
+	{
+		string name = part.Name.ToLowerInvariant();
+		part.Bone = BoneFor(name);
+		part.Class = ClassFor(name);
+	}
+
+	private static string BoneFor(string name)
+	{
+		if (name.Contains("cannon_breech") || name.Contains("gun_barrel_01"))
+		{
+			return "Gun";
+		}
+		if (name.Contains("gun_barrel_02") || name.Contains("optic_gun"))
+		{
+			return "Turret";
+		}
+		if (name.Contains("turret") || name.Contains("commander") || name.Contains("gunner") || name.Contains("loader") || name.Contains("fire_control") || name.Contains("radio") || name.Contains("drive_turret"))
+		{
+			return "Turret";
+		}
+		return "Hull";
+	}
+
+	private static string ClassFor(string name)
+	{
+		if (name.StartsWith("composite_armor") || name.StartsWith("spall_liner") || name.StartsWith("firewall_armor"))
+		{
+			return "int_armor";
+		}
+		if (name.StartsWith("ammo"))
+		{
+			return "int_ammo";
+		}
+		switch (name)
+		{
+		case "driver_xray":
+		case "gunner_xray":
+		case "loader_xray":
+		case "commander_xray":
+			return "int_crew";
+		default:
+			if (name.Contains("engine") || name.Contains("transmission") || name.Contains("radiator") || name.Contains("power_system"))
+			{
+				return "int_engine";
+			}
+			if (name.Contains("fire_control") || name.Contains("radio") || name.Contains("optic") || name.Contains("panoramic") || name.Contains("driver_controls"))
+			{
+				return "int_fcs";
+			}
+			return "int_metal";
+		}
+	}
 }

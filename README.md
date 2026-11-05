@@ -12,8 +12,9 @@ Gunner, HEAT, PC! 的 MelonLoader 模组。以本体里的 `LEO2A3` 为供体，
 - 主炮行程 **−9 / +20**，车顶机枪 **−10 / +75**。数字按这辆车自己的页面写，不是照供体的 −10 / +20 抄，所以炮管不会比真车多压一度。
 - 车顶那挺 MG3 变成真武器：能切进它的镜，能开火，「下一件武器」里轮得到，射速和声音沿用供体那挺 7.62（1200 rpm），弹链箱在模型上。
 - 炮手昼间镜里画的是 2A7V 的分划板，倍率档与分划抬落仍由游戏自己的火控驱动。按 `I` 可以把刻线点亮（荧光），再按一次熄灭；入夜时游戏自己会点亮，不受影响。
-- 装甲按 L2A7HU 模组的做法**只在供体之上叠加**：可见的 `ex_armor_*` 模块承载炮塔正面 880 / 1500（对穿甲 / 对破甲）、炮塔侧面 460 / 800、车体侧面 360 / 650、首上 360 / 720；x-ray 阵列只补可见件没盖住的部位（炮盾 350 / 700、炮塔后部 250 / 400、车顶甲 3×50 / 70、防火墙 100 / 100、衬层 15 / 15）。供体自己的装甲、命中区、乘员一个都不动。每块板一颗**凸包** MeshCollider、挂 rig 骨骼——非凸碰撞体会被 Unity 静默忽略（`Non-convex MeshCollider ... is no longer supported`），这是之前「装甲时灵时不灵」的根源。
-- X 光里只显示**游戏原版内构**：供体的舱室、乘员与伤害状态原样保留，战雷那套乘员舱不再导入（`ShowInterior = false`）。
+- 装甲按 **T-90M 的架构**整套重建（**独立版**，不再是叠加）：数据表 `armour_t90m_style.tsv` 里 35 条配置（外部炮塔模块、首上、内部复合、隔板、衬层），由 `LpArmourBuilder` 读嵌入的 `armor.bin` 与模型真实网格生成 MeshCollider + `UniformArmor` + AAR，注册进原生碰撞组，再按**精确名称**退役供体装甲。每辆车严格车体作用域 + 一次扫描缓存，多辆同场不会互相认走装甲件。每块板一颗**凸包** MeshCollider、挂 rig 骨骼——非凸碰撞体会被 Unity 静默忽略，这是更早版本「装甲时灵时不灵」的根源。
+- 内构也按 **T-90M 的架构**重建：`modules_t90m_style.json` 定义 19 个模块，Build 建区域、Wire 等设备就绪后统一接线。16 个用 `Interior.obj` 的真实网格（动力包、传动、散热器、炮闩、炮管、炮长镜、火控计算机、方向机、液压、高低机、电台、两个弹药架、配电、驾驶员操纵、车长周视镜），3 个明确盒体（座圈电驱动、手动方向机、稳定器），3 个只建可命中区域与状态文本、无原生效果（`report_only`：配电、驾驶员操纵、车长周视镜）。10 个原生 hook 接进游戏的伤害与状态系统。
+- 车长独立周视镜（CITV）：车长位按 `T` 进入/退出，镜内按 `T` 循环 15° / 10° / 4° 视场；旧的 `Z` 入口已删除。
 - 车长舱口的镜窗是真玻璃：战雷导出的镜片是不透明灰，看着像贴了图的板，这里换成供体自己的 `Standard (FLIR)` 玻璃着色。
 - 车会在地形上压出履带印。供体的压印刷（`grass cutter`，layer 24）被保留下来，TraxManager 才能把车体深度写进地形。
 
@@ -26,9 +27,11 @@ Gunner, HEAT, PC! 的 MelonLoader 模组。以本体里的 `LEO2A3` 为供体，
    Bin\Mods\Leopard2A7V.dll
    Bin\Mods\Leopard2A7V\Leopard2A7V.obj
    Bin\Mods\Leopard2A7V\Leopard2A7V.mtl
-   Bin\Mods\Leopard2A7V\Interior.obj     （战雷 x-ray 内构）
-   Bin\Mods\Leopard2A7V\textures\        （37 张 2K 图）
-   Bin\Mods\Leopard2A7V\textures_uhq\    （9 张 4K 图，TextureResolution=4k 时用）
+   Bin\Mods\Leopard2A7V\Interior.obj     （内构 19 个模块的真实网格，硬依赖）
+   Bin\Mods\Leopard2A7V\CitvAssets\citv_monitor  （车长镜显示器）
+   Bin\Mods\Leopard2A7V\L2A7V_data.txt   （可选：装甲/模块覆盖表）
+   Bin\Mods\Leopard2A7V\textures\        （2K 图）
+   Bin\Mods\Leopard2A7V\textures_uhq\    （4K 图，TextureResolution=4k 时用）
    Bin\Mods\Leopard2A7V\skins\           （nato / desert / winter / parade，2K 涂装）
    Bin\Mods\Leopard2A7V\skins_uhq\       （同四套的 4K 涂装，TextureResolution=4k 时用）
    ```

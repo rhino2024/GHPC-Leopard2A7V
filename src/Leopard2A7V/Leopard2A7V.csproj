@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net472</TargetFramework>
@@ -7,9 +7,12 @@
     <RootNamespace>Leopard2A7V</RootNamespace>
     <!-- Stamped onto the DLL itself. Without this the assembly said 1.0.0.0 forever, so nothing reading the
          file could tell which build it had. -->
-    <Version>0.3.0</Version>
-    <FileVersion>0.3.0</FileVersion>
-    <AssemblyVersion>0.3.0</AssemblyVersion>
+    <Version>0.3.2</Version>
+    <FileVersion>0.3.2</FileVersion>
+    <AssemblyVersion>0.3.2</AssemblyVersion>
+    <!-- The MelonInfo/MelonGame attributes live in Properties\AssemblyInfo.cs, as the standalone
+         (T-90M-style) architecture expects; generating a second copy would be a duplicate-attribute error. -->
+    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
     <Product>Leopard 2A7V</Product>
     <Company>rhino2024</Company>
     <Description>Leopard 2A7V tank model swap for Gunner, HEAT, PC!</Description>
@@ -73,6 +76,10 @@
       <HintPath>$(GameDir)\GHPC_Data\Managed\UnityEngine.IMGUIModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>$(GameDir)\GHPC_Data\Managed\UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.TextRenderingModule">
       <HintPath>$(GameDir)\GHPC_Data\Managed\UnityEngine.TextRenderingModule.dll</HintPath>
       <Private>false</Private>
@@ -84,6 +91,18 @@
     <EmbeddedResource Include="Assets\armor.bin">
       <LogicalName>armor.bin</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="armour_t90m_style.tsv">
+      <LogicalName>armour_t90m_style.tsv</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="modules_t90m_style.json">
+      <LogicalName>modules_t90m_style.json</LogicalName>
+    </EmbeddedResource>
+    <!-- Retained in source history only; the native PlayerInput path replaces it. -->
+    <Compile Remove="LpSmokeWiring.cs" />
+    <!-- Superseded architecture drafts: the embedded TSV/JSON builders are the only active path. -->
+    <Compile Remove="Architecture\LpDmArmour.cs" />
+    <Compile Remove="Architecture\LpDmGroups.cs" />
+    <Compile Remove="Architecture\LpDmArmourApply.cs" />
     <Reference Include="UnityEngine.AssetBundleModule">
       <HintPath>$(GameDir)\GHPC_Data\Managed\UnityEngine.AssetBundleModule.dll</HintPath>
       <Private>false</Private>

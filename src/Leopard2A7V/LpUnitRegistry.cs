@@ -1,3 +1,5 @@
+using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using GHPC.Mission;
@@ -5,102 +7,122 @@ using HarmonyLib;
 using MelonLoader;
 using UnityEngine;
 
-namespace Leopard2A7V
+namespace Leopard2A7V;
+
+public static class LpUnitRegistry
 {
-    /// <summary>
-    /// Adds a LEO2A7V entry to the vanilla unit prefab lookup by cloning the donor Leopard's record, so the
-    /// new tank is selectable in the mission customiser while every gameplay-side reference (ammo clips,
-    /// army, class, the LEO2A3 crew and its armour layout) is the donor's own.
-    /// </summary>
-    public static class LpUnitRegistry
-    {
-        private static readonly HashSet<int> _sourceMissingWarned = new HashSet<int>();
+	private static readonly HashSet<int> _sourceMissingWarned = new HashSet<int>();
 
-        public static void RegisterEverywhere()
-        {
-            var lookups = Resources.FindObjectsOfTypeAll<UnitPrefabLookupScriptable>();
-            int count = 0;
-            foreach (UnitPrefabLookupScriptable lookup in lookups)
-                if (Register(lookup)) count++;
-            if (count > 0)
-            {
-                MelonLogger.Msg($"[L2A7V] registered unit key '{LpConfig.UnitKey}' in {count} lookup asset(s)");
-                ClearMissionConfigCaches();
-            }
-        }
+	public static void RegisterEverywhere()
+	{
+		UnitPrefabLookupScriptable[] array = Resources.FindObjectsOfTypeAll<UnitPrefabLookupScriptable>();
+		int num = 0;
+		UnitPrefabLookupScriptable[] array2 = array;
+		for (int i = 0; i < array2.Length; i++)
+		{
+			if (Register(array2[i]))
+			{
+				num++;
+			}
+		}
+		if (num > 0)
+		{
+			MelonLogger.Msg(string.Format("[L2A7V] registered unit key '{0}' in {1} lookup asset(s)", "LEO2A7V", num));
+			ClearMissionConfigCaches();
+		}
+	}
 
-        public static bool Register(UnitPrefabLookupScriptable lookup)
-        {
-            if (lookup == null || lookup.AllUnits == null) return false;
+	public static bool Register(UnitPrefabLookupScriptable lookup)
+	{
+		if (lookup == null || lookup.AllUnits == null)
+		{
+			return false;
+		}
+		string text = "LEO2A3";
+		UnitPrefabLookupScriptable.UnitPrefabMetadata unitPrefabMetadata = null;
+		bool flag = false;
+		UnitPrefabLookupScriptable.UnitPrefabMetadata[] allUnits = lookup.AllUnits;
+		foreach (UnitPrefabLookupScriptable.UnitPrefabMetadata unitPrefabMetadata2 in allUnits)
+		{
+			if (unitPrefabMetadata2 != null)
+			{
+				if (unitPrefabMetadata2.Name == "LEO2A7V")
+				{
+					flag = true;
+				}
+				else if (unitPrefabMetadata2.Name == text)
+				{
+					unitPrefabMetadata = unitPrefabMetadata2;
+				}
+			}
+		}
+		if (flag)
+		{
+			return false;
+		}
+		if (unitPrefabMetadata == null)
+		{
+			if (_sourceMissingWarned.Add(lookup.GetInstanceID()))
+			{
+				List<string> list = new List<string>();
+				allUnits = lookup.AllUnits;
+				foreach (UnitPrefabLookupScriptable.UnitPrefabMetadata unitPrefabMetadata3 in allUnits)
+				{
+					if (unitPrefabMetadata3 != null)
+					{
+						list.Add(unitPrefabMetadata3.Name);
+					}
+				}
+				MelonLogger.Warning("[L2A7V] source unit '" + text + "' is not in this lookup asset (" + list.Count + " units): " + string.Join(", ", list));
+			}
+			return false;
+		}
+		UnitPrefabLookupScriptable.UnitPrefabMetadata item = new UnitPrefabLookupScriptable.UnitPrefabMetadata
+		{
+			Name = "LEO2A7V",
+			FriendlyName = "Leopard 2A7V",
+			PrefabReference = unitPrefabMetadata.PrefabReference,
+			BaseAmmoClipsReference = unitPrefabMetadata.BaseAmmoClipsReference,
+			UseDecalLayout = false,
+			DecalLayout = unitPrefabMetadata.DecalLayout,
+			Army = unitPrefabMetadata.Army,
+			Class = unitPrefabMetadata.Class,
+			AlternativeClasses = unitPrefabMetadata.AlternativeClasses,
+			AllowInCustomizer = true
+		};
+		List<UnitPrefabLookupScriptable.UnitPrefabMetadata> list2 = new List<UnitPrefabLookupScriptable.UnitPrefabMetadata>(lookup.AllUnits) { item };
+		lookup.AllUnits = list2.ToArray();
+		ClearSpawnerCache(lookup);
+		return true;
+	}
 
-            string sourceKey = LpConfig.SourceUnitKey;
-            UnitPrefabLookupScriptable.UnitPrefabMetadata source = null;
-            bool alreadyRegistered = false;
+	private static void ClearSpawnerCache(UnitPrefabLookupScriptable lookup)
+	{
+		UnitSpawner[] array = UnityEngine.Object.FindObjectsOfType<UnitSpawner>();
+		foreach (UnitSpawner unitSpawner in array)
+		{
+			if (!(unitSpawner.PrefabLookup != lookup))
+			{
+				FieldInfo fieldInfo = AccessTools.Field(typeof(UnitSpawner), "_prefabLookupCached");
+				if (fieldInfo != null)
+				{
+					fieldInfo.SetValue(unitSpawner, null);
+				}
+			}
+		}
+	}
 
-            foreach (UnitPrefabLookupScriptable.UnitPrefabMetadata entry in lookup.AllUnits)
-            {
-                if (entry == null) continue;
-                if (entry.Name == LpConfig.UnitKey) alreadyRegistered = true;
-                else if (entry.Name == sourceKey) source = entry;
-            }
-
-            if (alreadyRegistered) return false;
-            if (source == null)
-            {
-                if (_sourceMissingWarned.Add(lookup.GetInstanceID()))
-                {
-                    var names = new List<string>();
-                    foreach (UnitPrefabLookupScriptable.UnitPrefabMetadata entry in lookup.AllUnits)
-                        if (entry != null) names.Add(entry.Name);
-                    MelonLogger.Warning("[L2A7V] source unit '" + sourceKey + "' is not in this lookup asset (" +
-                                        names.Count + " units): " + string.Join(", ", names));
-                }
-                return false;
-            }
-
-            var clone = new UnitPrefabLookupScriptable.UnitPrefabMetadata
-            {
-                Name = LpConfig.UnitKey,
-                FriendlyName = LpConfig.FriendlyName,
-                PrefabReference = source.PrefabReference,
-                BaseAmmoClipsReference = source.BaseAmmoClipsReference,
-                // The donor's decal layout is UV-baked for its own hull, so the imported art gets none.
-                UseDecalLayout = false,
-                DecalLayout = source.DecalLayout,
-                Army = source.Army,
-                Class = source.Class,
-                AlternativeClasses = source.AlternativeClasses,
-                AllowInCustomizer = true
-            };
-
-            var units = new List<UnitPrefabLookupScriptable.UnitPrefabMetadata>(lookup.AllUnits) { clone };
-            lookup.AllUnits = units.ToArray();
-
-            // The spawner caches the lookup contents on first use, so any existing cache must go.
-            ClearSpawnerCache(lookup);
-            return true;
-        }
-
-        private static void ClearSpawnerCache(UnitPrefabLookupScriptable lookup)
-        {
-            foreach (UnitSpawner spawner in Object.FindObjectsOfType<UnitSpawner>())
-            {
-                if (spawner.PrefabLookup != lookup) continue;
-                FieldInfo cache = AccessTools.Field(typeof(UnitSpawner), "_prefabLookupCached");
-                if (cache != null) cache.SetValue(spawner, null);
-            }
-        }
-
-        private static void ClearMissionConfigCaches()
-        {
-            System.Type panelType = AccessTools.TypeByName("MissionConfigMenuPanel");
-            if (panelType == null) return;
-            FieldInfo field = AccessTools.Field(panelType, "_unitKeysByClassCached");
-            if (field == null) return;
-            var dictionary = field.GetValue(null) as System.Collections.IDictionary;
-            if (dictionary == null) return;
-            dictionary.Clear();
-            MelonLogger.Msg("[L2A7V] cleared the mission customization unit key cache");
-        }
-    }
+	private static void ClearMissionConfigCaches()
+	{
+		Type type = AccessTools.TypeByName("MissionConfigMenuPanel");
+		if (!(type == null))
+		{
+			FieldInfo fieldInfo = AccessTools.Field(type, "_unitKeysByClassCached");
+			if (!(fieldInfo == null) && fieldInfo.GetValue(null) is IDictionary dictionary)
+			{
+				dictionary.Clear();
+				MelonLogger.Msg("[L2A7V] cleared the mission customization unit key cache");
+			}
+		}
+	}
 }

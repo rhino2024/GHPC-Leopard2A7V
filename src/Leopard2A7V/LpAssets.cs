@@ -1,580 +1,628 @@
-using MelonLoader;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using MelonLoader;
 using UnityEngine;
+using UnityEngine.Rendering;
 
-namespace Leopard2A7V
+namespace Leopard2A7V;
+
+public static class LpAssets
 {
-    public enum NormalPackMode
-    {
-        Raw = 0,
-        RedGreen = 1,
-        AlphaGreen = 2
-    }
-
-    /// <summary>
-    /// Builds Unity meshes, textures and materials from the parsed Wavefront data.
-    /// </summary>
-    public static class LpAssets
-    {
-        private static readonly Dictionary<string, Texture2D> Textures = new Dictionary<string, Texture2D>();
-        private static readonly Dictionary<string, Material> Materials = new Dictionary<string, Material>();
-        private static readonly Dictionary<string, Mesh> Meshes = new Dictionary<string, Mesh>();
-
-        private static NormalPackMode _normalMode = NormalPackMode.Raw;
-        private static bool _normalModeDetected;
-        private static int _maxTextureSize = 1024;
-
-        public static void ConfigureFromTemplate(Material template)
-        {
-            if (_normalModeDetected || template == null) return;
-            _normalModeDetected = true;
-            if (!template.HasProperty("_Normal")) return;
-            Texture reference = template.GetTexture("_Normal");
-            var texture2D = reference as Texture2D;
-            if (texture2D == null) return;
-
-            string format = texture2D.format.ToString();
-            MelonLogger.Msg("[L2A7V] vanilla normal map format: " + format);
-            // BC5 is the only container that stores x in red; every other compressed format Unity uses
-            // for normal maps here keeps the DXT5nm swizzle (x in alpha, y in green), which is what the
-            // vehicle shader unpacks.
-            if (format.IndexOf("BC5", StringComparison.OrdinalIgnoreCase) >= 0)
-                _normalMode = NormalPackMode.RedGreen;
-            else if (format.IndexOf("DXT5", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                     format.IndexOf("BC7", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                     format.IndexOf("BC3", StringComparison.OrdinalIgnoreCase) >= 0)
-                _normalMode = NormalPackMode.AlphaGreen;
-            else
-                _normalMode = NormalPackMode.Raw;
-            MelonLogger.Msg("[L2A7V] normal maps packed as: " + _normalMode);
-        }
-
-        public static void SetMaxTextureSize(int value)
-        {
-            _maxTextureSize = Mathf.Clamp(value, 256, 4096);
-        }
-
-        public static IEnumerable<KeyValuePair<string, Material>> CreatedMaterials => Materials;
-        public static IEnumerable<Mesh> CreatedMeshes => Meshes.Values;
-
-        /// <summary>
-        /// Re-points every cached runtime material at the shader the current mission loaded. GHPC releases the
-        /// vehicles bundle when a mission ends, and our Materials - which live in a static cache and in the
-        /// cloned template under DontDestroyOnLoad - outlive it while their shader reference does not. Repairing
-        /// in place is what makes the fix reach the already-spawned vehicles too: their renderers were handed
-        /// these same Material objects, so the next frame draws them with the revived shader.
-        /// </summary>
-        public static int RepairShader(Shader live)
-        {
-            if (live == null) return 0;
-            int repaired = 0;
-            foreach (Material material in Materials.Values)
-            {
-                if (material == null || material.shader == live) continue;
-                material.shader = live;
-                repaired++;
-            }
-            return repaired;
-        }
-
-        public static Material GetMaterial(int materialIndex, string groupKey, bool pane)
-        {
-            // Every glazing sheet in the export - the cupola's sight window, the driver's periscopes, the
-            // headlight lenses - is named for what it is, but us_turret_glass also skins a few appliqué
-            // plates. Those are armour and have to stay painted, so the geometry decides: a pane is a couple
-            // of centimetres thick, a plate is not.
-            if (IsGlass(materialIndex) && (pane || groupKey == LpVisual.CommanderGearNode))
-            {
-                Material glass = GetGlassMaterial();
-                if (glass != null) return glass;
-            }
-
-            string cacheKey = groupKey + "|" + materialIndex;
-            Material cached;
-            if (Materials.TryGetValue(cacheKey, out cached)) return cached;
-
-            var template = LpVisual.TemplateMaterial;
-            if (template == null) return null;
-
-            Material material = Clone(materialIndex, template, LpConfig.NeutralMaps);
-            Materials[cacheKey] = material;
-            return material;
-        }
-
-        private static bool IsGlass(int materialIndex)
-        {
-            if (materialIndex < 0 || materialIndex >= ObjModel.Materials.Count) return false;
-            string name = ObjModel.Materials[materialIndex].Name;
-            return name != null && name.IndexOf("glass", StringComparison.OrdinalIgnoreCase) >= 0;
-        }
-
-        private static Material _glassMaterial;
-
-        private static Material GetGlassMaterial()
-        {
-            Material source = LpVisual.GlassTemplate;
-            if (source == null) return null;
-
-            if (_glassMaterial == null)
-            {
-                _glassMaterial = new Material(source) { name = "L2A7V glass" };
-                MelonLogger.Msg($"[L2A7V] using '{source.name}' for the glass panes, " +
-                                $"queue {_glassMaterial.renderQueue}");
-            }
-            else if (_glassMaterial.shader != source.shader)
-            {
-                // The cached clone outlived the bundle that held its shader; the donor's fresh copy revives it.
-                _glassMaterial.shader = source.shader;
-                MelonLogger.Warning("[L2A7V] re-pointed the sight glass at the live " + source.shader.name);
-            }
-            return _glassMaterial;
-        }
-
-        private static Material Clone(int materialIndex, Material template, bool neutralMaps)
-        {
-            MtlDef definition = materialIndex >= 0 && materialIndex < ObjModel.Materials.Count
-                ? ObjModel.Materials[materialIndex]
-                : null;
-
-            var material = new Material(template) { name = template.name + " (L2A7V " + materialIndex + ")" };
-            bool detailMaps = LpConfig.UseDetailMaps;
-            bool hasOcclusion = false;
-            bool hasGloss = false;
-            if (definition != null)
-            {
-                if (definition.AlbedoPath != null)
-                {
-                    Texture2D albedo = LoadTexture(definition.AlbedoPath, false, Pack.None, true);
-                    if (albedo != null) material.SetTexture("_Albedo", albedo);
-                }
-                if (definition.NormalPath != null)
-                {
-                    Texture2D normal = LoadTexture(definition.NormalPath, true, Pack.Normal);
-                    if (normal != null) material.SetTexture("_Normal", normal);
-                }
-                if (detailMaps && definition.OcclusionPath != null)
-                {
-                    // lp_texpass.py already re-centres these bakes on LEO2_ao's mean offline; no runtime shift.
-                    Texture2D occlusion = LoadTexture(definition.OcclusionPath, true, Pack.None);
-                    if (occlusion != null)
-                    {
-                        SetIfPresent(material, "_Occlusion", occlusion);
-                        hasOcclusion = true;
-                    }
-                }
-                if (definition.GlossPath != null)
-                {
-                    // Authored the way LEO2_sm is: RGB near zero, gloss in alpha.
-                    Texture2D gloss = LoadTexture(definition.GlossPath, true, Pack.None);
-                    if (gloss != null)
-                    {
-                        SetIfPresent(material, "_Smoothness", gloss);
-                        hasGloss = true;
-                    }
-                }
-            }
-
-            if (!hasOcclusion) SetIfPresent(material, "_Occlusion", Texture2D.whiteTexture);
-            SetIfPresent(material, "_OcclusionStrength", 1f);
-
-            if (neutralMaps && !hasGloss) SetIfPresent(material, "_Smoothness", NeutralSmoothness);
-            if (neutralMaps) SetIfPresent(material, "_PaintMask", NeutralPaintMask);
-
-            // GHPC's paint system leaves these switched on for camouflaged hulls, which makes the shader
-            // look for a camo layer our imported UV layout has no relationship to.
-            SetIfPresent(material, "_hackcamoUVs", 0f);
-            if (material.shaderKeywords != null && material.shaderKeywords.Length > 0)
-                material.DisableKeyword("_HACKCAMOUVS_ON");
-            SetIfPresent(material, "_CamoAmount", 0f);
-            SetIfPresent(material, "_ScorchAmount", 0f);
-            SetIfPresent(material, "_snow", 0f);
-            SetIfPresent(material, "_dirt", 0f);
-
-            MelonLogger.Msg($"[L2A7V] material {materialIndex} '{definition?.Name ?? "none"}' " +
-                            $"albedo={FileNameOf(definition?.AlbedoPath)} normal={FileNameOf(definition?.NormalPath)} " +
-                            $"ao={FileNameOf(definition?.OcclusionPath)} gloss={FileNameOf(definition?.GlossPath)} " +
-                            $"neutral={neutralMaps}");
-            return material;
-        }
-
-        private static string FileNameOf(string path) =>
-            string.IsNullOrEmpty(path) ? "<none>" : Path.GetFileName(path);
-
-        private static void SetIfPresent(Material material, string property, Texture value)
-        {
-            if (value != null && material.HasProperty(property)) material.SetTexture(property, value);
-        }
-
-        private static void SetIfPresent(Material material, string property, float value)
-        {
-            if (material.HasProperty(property)) material.SetFloat(property, value);
-        }
-
-        private static Texture2D _neutralPaintMask, _neutralSmoothness;
-
-        private static Texture2D NeutralPaintMask
-        {
-            get
-            {
-                if (_neutralPaintMask == null)
-                {
-                    // R is "paint present"; the T-90A mod authors a flat 161 in G across its whole mask,
-                    // so that is the value that reads as an unworn factory finish.
-                    _neutralPaintMask = FlatTexture(Level(LpConfig.PaintMaskLevel), 161, 0, 255);
-                }
-                return _neutralPaintMask;
-            }
-        }
-
-        private static Texture2D NeutralSmoothness
-        {
-            get
-            {
-                if (_neutralSmoothness == null)
-                    _neutralSmoothness = FlatTexture(0, 0, 0, Level(LpConfig.SmoothnessLevel));
-                return _neutralSmoothness;
-            }
-        }
-
-        private static byte Level(int value) => (byte)Mathf.Clamp(value, 0, 255);
-
-        private static Texture2D FlatTexture(byte r, byte g, byte b, byte a)
-        {
-            var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false, true) { name = "L2A7V_neutral" };
-            var pixels = new Color32[4];
-            for (int i = 0; i < 4; i++) pixels[i] = new Color32(r, g, b, a);
-            texture.SetPixels32(pixels);
-            texture.Apply(false);
-            return texture;
-        }
-
-        /// <summary>
-        /// A material for geometry that has no texture coordinates at all, which is what the x-ray interior
-        /// meshes are: the War Thunder module shells carry no UVs the vehicle shader could sample, so every
-        /// map is a flat one. Cloned from the donor's own material so it runs the same shader with the same
-        /// keywords, and the flat normal goes through PackNormals like every other normal this mod binds.
-        /// </summary>
-        public static Material CreateFlatMaterial(string name, Color32 albedo, byte gloss)
-        {
-            Material template = LpVisual.TemplateMaterial;
-            if (template == null) return null;
-
-            var material = new Material(template) { name = name };
-
-            Texture2D albedoTexture = FlatTexture(albedo.r, albedo.g, albedo.b, albedo.a);
-            albedoTexture.name = name + " albedo";
-            if (material.HasProperty("_Albedo")) material.SetTexture("_Albedo", albedoTexture);
-
-            Texture2D smoothness = FlatTexture(0, 0, 0, gloss);
-            smoothness.name = name + " smoothness";
-            SetIfPresent(material, "_Smoothness", smoothness);
-            SetIfPresent(material, "_Occlusion", Texture2D.whiteTexture);
-            SetIfPresent(material, "_OcclusionStrength", 1f);
-            SetIfPresent(material, "_PaintMask", NeutralPaintMask);
-
-            var flat = new Color32[4];
-            for (int i = 0; i < 4; i++) flat[i] = new Color32(127, 127, 255, 255);
-            var normal = new Texture2D(2, 2, TextureFormat.RGBA32, true, false) { name = name + " normal" };
-            normal.SetPixels32(PackNormals(flat));
-            normal.Apply(true);
-            SetIfPresent(material, "_Normal", normal);
-
-            SetIfPresent(material, "_hackcamoUVs", 0f);
-            if (material.shaderKeywords != null && material.shaderKeywords.Length > 0)
-                material.DisableKeyword("_HACKCAMOUVS_ON");
-            SetIfPresent(material, "_CamoAmount", 0f);
-            SetIfPresent(material, "_ScorchAmount", 0f);
-            SetIfPresent(material, "_snow", 0f);
-            SetIfPresent(material, "_dirt", 0f);
-            return material;
-        }
-
-        public static Mesh BuildMesh(LpGroup group, string cacheKey, Vector3 anchor)
-        {
-            return BuildWhere(part => part.Group == group, cacheKey, anchor);
-        }
-
-        /// <summary>
-        /// Builds one mesh from whatever geometry the selector accepts, so a caller can split a group into
-        /// as many nodes as it needs - one per road wheel, for instance, to let each wheel ride its own bone.
-        /// </summary>
-        public static Mesh BuildWhere(System.Predicate<ObjGeometry> select, string cacheKey, Vector3 anchor)
-        {
-            Mesh cached;
-            if (Meshes.TryGetValue(cacheKey, out cached)) return cached;
-
-            var positions = new List<Vector3>();
-            var uvs = new List<Vector2>();
-            var normals = new List<Vector3>();
-            var tangents = new List<Vector4>();
-            var submeshTriangles = new Dictionary<int, List<int>>();
-            var materialOrder = new List<int>();
-            // Thinnest part seen for each material: a sight window or a headlight lens is a pane a couple of
-            // centimetres thick, while the appliqué plates that share the same glass sheet are armour and
-            // have to stay solid. Published so the material resolver can tell the two apart.
-            var submeshThickness = new Dictionary<int, float>();
-
-            foreach (ObjGeometry part in ObjModel.Geometries)
-            {
-                if (!select(part)) continue;
-
-                int offset = positions.Count;
-                for (int i = 0; i < part.Positions.Length; i++)
-                {
-                    positions.Add(part.Positions[i] - anchor);
-                    uvs.Add(part.Uvs[i]);
-                    normals.Add(part.Normals[i]);
-                    tangents.Add(part.Tangents[i]);
-                }
-
-                float thickness = Mathf.Min(part.Bounds.size.x, Mathf.Min(part.Bounds.size.y, part.Bounds.size.z));
-                float seen;
-                if (submeshThickness.TryGetValue(part.MaterialIndex, out seen))
-                    submeshThickness[part.MaterialIndex] = Mathf.Min(seen, thickness);
-                else
-                    submeshThickness[part.MaterialIndex] = thickness;
-
-                List<int> triangles;
-                if (!submeshTriangles.TryGetValue(part.MaterialIndex, out triangles))
-                {
-                    triangles = new List<int>();
-                    submeshTriangles.Add(part.MaterialIndex, triangles);
-                    materialOrder.Add(part.MaterialIndex);
-                }
-                for (int i = 0; i < part.Triangles.Length; i++)
-                    triangles.Add(part.Triangles[i] + offset);
-            }
-
-            if (positions.Count == 0) return null;
-
-            var mesh = new Mesh { name = "L2A7V_" + cacheKey, indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
-            mesh.SetVertices(positions);
-            mesh.SetUVs(0, uvs);
-            mesh.SetNormals(normals);
-            mesh.SetTangents(tangents);
-            mesh.subMeshCount = materialOrder.Count;
-            for (int i = 0; i < materialOrder.Count; i++)
-                mesh.SetTriangles(submeshTriangles[materialOrder[i]], i);
-            mesh.RecalculateBounds();
-            mesh.UploadMeshData(true);
-
-            LpVisual.GroupMaterials[cacheKey] = materialOrder;
-            var thin = new List<bool>(materialOrder.Count);
-            foreach (int index in materialOrder)
-            {
-                float thickness = submeshThickness.ContainsKey(index) ? submeshThickness[index] : 0f;
-                thin.Add(thickness <= 0.06f);
-            }
-            LpVisual.GroupThin[cacheKey] = thin;
-            Meshes[cacheKey] = mesh;
-            return mesh;
-        }
-
-        private enum Pack
-        {
-            None,
-            Normal
-        }
-
-        private static bool _skinWarned;
-
-        /// <summary>
-        /// Paint schemes are baked into their own folder rather than overwriting the factory sheet, so the
-        /// mod can switch without touching textures/. Only albedos are looked up here: a scheme carries the
-        /// painted hull, turret, gun and MG mount, and everything else (normals, AO, gloss, tracks, glass)
-        /// still comes from textures/.
-        ///
-        /// The scheme has a 4K twin under skins_uhq when the 4K kit is selected. Resolution is decided inside
-        /// the scheme, not after it: a sheet the 4K bake did not produce (this mod's MG mount is 2K only) must
-        /// stay on the 2K painted sheet rather than fall through to the unpainted 4K factory albedo.
-        /// </summary>
-        private static string ResolveSkin(string path)
-        {
-            string skin = LpConfig.SkinName;
-            if (skin.Length == 0) return path;
-
-            string file = Path.GetFileName(path);
-            string[] roots = LpConfig.UhdTextures
-                ? new[] { "skins_uhq", "skins" }
-                : new[] { "skins" };
-            foreach (string root in roots)
-            {
-                string candidate = Path.Combine(LpConfig.AssetDir, root, skin, file);
-                if (!File.Exists(candidate)) continue;
-                MelonLogger.Msg("[L2A7V] scheme '" + skin + "': " + root + "/" + skin + "/" + file);
-                return candidate;
-            }
-
-            if (!_skinWarned && !Directory.Exists(Path.Combine(LpConfig.AssetDir, "skins", skin)))
-            {
-                _skinWarned = true;
-                MelonLogger.Warning("[L2A7V] paint scheme '" + skin + "' has no folder under " +
-                                    Path.Combine(LpConfig.AssetDir, "skins") + "; keeping the factory scheme");
-            }
-            return path;
-        }
-
-        /// <summary>
-        /// The 4K kit is the same sheets re-exported at twice the resolution, kept in a parallel folder so the
-        /// 2K delivery stays untouched and either can be shipped or deleted without a rebuild. Only files the kit
-        /// actually carries are redirected: it has no MG mount sheet and its ambient-occlusion bakes are the same
-        /// 512-wide ones, so those stay on the 2K originals instead of going missing.
-        /// </summary>
-        private static string ResolveResolution(string path)
-        {
-            if (!LpConfig.UhdTextures) return path;
-
-            string directory = Path.GetDirectoryName(path);
-            if (directory == null ||
-                !string.Equals(Path.GetFileName(directory), "textures", StringComparison.OrdinalIgnoreCase))
-                return path;
-
-            string candidate = Path.Combine(Path.GetDirectoryName(directory), "textures_uhq", Path.GetFileName(path));
-            return File.Exists(candidate) ? candidate : path;
-        }
-
-        private static Texture2D LoadTexture(string path, bool linear, Pack pack, bool isAlbedo = false)
-        {
-            if (isAlbedo) path = ResolveSkin(path);
-            path = ResolveResolution(path);
-            string key = path + "|" + pack + (pack == Pack.Normal ? "|" + _normalMode : string.Empty)
-                + "|" + _maxTextureSize
-                + "|" + (isAlbedo ? LpConfig.AlbedoLuminance : -1);
-            Texture2D cached;
-            if (Textures.TryGetValue(key, out cached)) return cached;
-
-            try
-            {
-                byte[] bytes = File.ReadAllBytes(path);
-                var source = new Texture2D(2, 2, TextureFormat.RGBA32, false, true);
-                if (!ImageConversion.LoadImage(source, bytes))
-                {
-                    UnityEngine.Object.Destroy(source);
-                    return null;
-                }
-
-                int width = source.width;
-                int height = source.height;
-                Color32[] pixels = Resample(source.GetPixels32(), width, height,
-                    Mathf.Min(width, _maxTextureSize), Mathf.Min(height, _maxTextureSize), out width, out height);
-                UnityEngine.Object.Destroy(source);
-
-                if (pack == Pack.Normal) pixels = PackNormals(pixels);
-                if (isAlbedo) pixels = MatchAlbedoLuminance(pixels, path);
-
-                var result = new Texture2D(width, height, TextureFormat.RGBA32, true, linear)
-                {
-                    name = Path.GetFileNameWithoutExtension(path),
-                    filterMode = FilterMode.Trilinear,
-                    anisoLevel = 4,
-                    wrapMode = TextureWrapMode.Repeat
-                };
-                result.SetPixels32(pixels);
-                result.Apply(true);
-                Textures[key] = result;
-                return result;
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Warning("[L2A7V] texture load failed for " + path + ": " + ex.Message);
-                return null;
-            }
-        }
-
-        /// <summary>
-        /// Optional fallback that pulls a raw imported albedo down into GHPC's brightness band: the donor's
-        /// LEO2_co measures 42/42/35 per channel, where an unprocessed War Thunder diffuse sits at 101/90/80,
-        /// which reads as a milky film once GHPC's exposure is applied. Scaling the stored sRGB bytes is
-        /// equivalent to scaling linear reflectance. The shipped maps already come out of lp_texpass.py at
-        /// the donor tone, so AlbedoLuminance defaults to 0 and this only runs for hand-dropped textures.
-        /// </summary>
-        private static Color32[] MatchAlbedoLuminance(Color32[] source, string path)
-        {
-            int target = LpConfig.AlbedoLuminance;
-            if (target <= 0) return source;
-
-            long sum = 0;
-            for (int i = 0; i < source.Length; i++)
-                sum += source[i].r + source[i].g + source[i].b;
-            float current = sum / (source.Length * 3f);
-            if (current < 1f) return source;
-
-            float factor = Mathf.Clamp(target / current, 0.55f, 1f);
-            if (factor > 0.995f) return source;
-
-            for (int i = 0; i < source.Length; i++)
-            {
-                Color32 pixel = source[i];
-                source[i] = new Color32(
-                    (byte)Mathf.Clamp(pixel.r * factor, 0f, 255f),
-                    (byte)Mathf.Clamp(pixel.g * factor, 0f, 255f),
-                    (byte)Mathf.Clamp(pixel.b * factor, 0f, 255f),
-                    pixel.a);
-            }
-            MelonLogger.Msg($"[L2A7V] albedo {Path.GetFileName(path)} luminance " +
-                            $"{current:F0} -> {current * factor:F0} (x{factor:F2})");
-            return source;
-        }
-
-        private static Color32[] PackNormals(Color32[] source)
-        {
-            if (_normalMode == NormalPackMode.Raw) return source;
-            var result = new Color32[source.Length];
-            for (int i = 0; i < source.Length; i++)
-            {
-                Color32 pixel = source[i];
-                byte x = pixel.r;
-                byte y = pixel.g;
-                if (_normalMode == NormalPackMode.RedGreen)
-                    result[i] = new Color32(x, y, 128, 255);
-                else
-                    result[i] = new Color32(255, y, 127, x);
-            }
-            return result;
-        }
-
-        private static Color32[] Resample(Color32[] source, int sourceWidth, int sourceHeight,
-            int targetWidth, int targetHeight, out int outWidth, out int outHeight)
-        {
-            outWidth = targetWidth;
-            outHeight = targetHeight;
-            if (targetWidth == sourceWidth && targetHeight == sourceHeight) return source;
-
-            var result = new Color32[targetWidth * targetHeight];
-            float stepX = (float)sourceWidth / targetWidth;
-            float stepY = (float)sourceHeight / targetHeight;
-            for (int y = 0; y < targetHeight; y++)
-            {
-                int yStart = Mathf.Clamp((int)(y * stepY), 0, sourceHeight - 1);
-                int yEnd = Mathf.Max(yStart + 1, Mathf.CeilToInt((y + 1) * stepY));
-                yEnd = Mathf.Min(yEnd, sourceHeight);
-                for (int x = 0; x < targetWidth; x++)
-                {
-                    int xStart = Mathf.Clamp((int)(x * stepX), 0, sourceWidth - 1);
-                    int xEnd = Mathf.Max(xStart + 1, Mathf.CeilToInt((x + 1) * stepX));
-                    xEnd = Mathf.Min(xEnd, sourceWidth);
-
-                    int rSum = 0, gSum = 0, bSum = 0, aSum = 0, count = 0;
-                    for (int sy = yStart; sy < yEnd; sy++)
-                    {
-                        int row = sy * sourceWidth;
-                        for (int sx = xStart; sx < xEnd; sx++)
-                        {
-                            Color32 pixel = source[row + sx];
-                            rSum += pixel.r;
-                            gSum += pixel.g;
-                            bSum += pixel.b;
-                            aSum += pixel.a;
-                            count++;
-                        }
-                    }
-                    result[y * targetWidth + x] = new Color32(
-                        (byte)(rSum / count), (byte)(gSum / count), (byte)(bSum / count), (byte)(aSum / count));
-                }
-            }
-            return result;
-        }
-    }
+	private enum Pack
+	{
+		None,
+		Normal
+	}
+
+	private static readonly Dictionary<string, Texture2D> Textures = new Dictionary<string, Texture2D>();
+
+	private static readonly Dictionary<string, Material> Materials = new Dictionary<string, Material>();
+
+	private static readonly Dictionary<string, Mesh> Meshes = new Dictionary<string, Mesh>();
+
+	private static NormalPackMode _normalMode = NormalPackMode.Raw;
+
+	private static bool _normalModeDetected;
+
+	private static int _maxTextureSize = 1024;
+
+	private static Material _glassMaterial;
+
+	private static Texture2D _neutralPaintMask;
+
+	private static Texture2D _neutralSmoothness;
+
+	private static bool _skinWarned;
+
+	public static IEnumerable<KeyValuePair<string, Material>> CreatedMaterials => Materials;
+
+	public static IEnumerable<Mesh> CreatedMeshes => Meshes.Values;
+
+	private static Texture2D NeutralPaintMask
+	{
+		get
+		{
+			if (_neutralPaintMask == null)
+			{
+				_neutralPaintMask = FlatTexture(Level(255), 161, 0, byte.MaxValue);
+			}
+			return _neutralPaintMask;
+		}
+	}
+
+	private static Texture2D NeutralSmoothness
+	{
+		get
+		{
+			if (_neutralSmoothness == null)
+			{
+				_neutralSmoothness = FlatTexture(0, 0, 0, Level(63));
+			}
+			return _neutralSmoothness;
+		}
+	}
+
+	public static void ConfigureFromTemplate(Material template)
+	{
+		if (_normalModeDetected || template == null)
+		{
+			return;
+		}
+		_normalModeDetected = true;
+		if (!template.HasProperty("_Normal"))
+		{
+			return;
+		}
+		Texture2D texture2D = template.GetTexture("_Normal") as Texture2D;
+		if (!(texture2D == null))
+		{
+			string text = texture2D.format.ToString();
+			MelonLogger.Msg("[L2A7V] vanilla normal map format: " + text);
+			if (text.IndexOf("BC5", StringComparison.OrdinalIgnoreCase) >= 0)
+			{
+				_normalMode = NormalPackMode.RedGreen;
+			}
+			else if (text.IndexOf("DXT5", StringComparison.OrdinalIgnoreCase) >= 0 || text.IndexOf("BC7", StringComparison.OrdinalIgnoreCase) >= 0 || text.IndexOf("BC3", StringComparison.OrdinalIgnoreCase) >= 0)
+			{
+				_normalMode = NormalPackMode.AlphaGreen;
+			}
+			else
+			{
+				_normalMode = NormalPackMode.Raw;
+			}
+			MelonLogger.Msg("[L2A7V] normal maps packed as: " + _normalMode);
+		}
+	}
+
+	public static void SetMaxTextureSize(int value)
+	{
+		_maxTextureSize = Mathf.Clamp(value, 256, 4096);
+	}
+
+	public static int RepairShader(Shader live)
+	{
+		if (live == null)
+		{
+			return 0;
+		}
+		int num = 0;
+		foreach (Material value in Materials.Values)
+		{
+			if (!(value == null) && !(value.shader == live))
+			{
+				value.shader = live;
+				num++;
+			}
+		}
+		return num;
+	}
+
+	public static Material GetMaterial(int materialIndex, string groupKey, bool pane)
+	{
+		if (IsGlass(materialIndex) && (pane || groupKey == "CommanderGear"))
+		{
+			Material glassMaterial = GetGlassMaterial();
+			if (glassMaterial != null)
+			{
+				return glassMaterial;
+			}
+		}
+		string key = groupKey + "|" + materialIndex;
+		if (Materials.TryGetValue(key, out var value))
+		{
+			return value;
+		}
+		Material templateMaterial = LpVisual.TemplateMaterial;
+		if (templateMaterial == null)
+		{
+			return null;
+		}
+		Material material = Clone(materialIndex, templateMaterial, neutralMaps: true);
+		Materials[key] = material;
+		return material;
+	}
+
+	private static bool IsGlass(int materialIndex)
+	{
+		if (materialIndex < 0 || materialIndex >= ObjModel.Materials.Count)
+		{
+			return false;
+		}
+		string name = ObjModel.Materials[materialIndex].Name;
+		if (name != null)
+		{
+			return name.IndexOf("glass", StringComparison.OrdinalIgnoreCase) >= 0;
+		}
+		return false;
+	}
+
+	private static Material GetGlassMaterial()
+	{
+		Material glassTemplate = LpVisual.GlassTemplate;
+		if (glassTemplate == null)
+		{
+			return null;
+		}
+		if (_glassMaterial == null)
+		{
+			_glassMaterial = new Material(glassTemplate)
+			{
+				name = "L2A7V glass"
+			};
+			MelonLogger.Msg("[L2A7V] using '" + glassTemplate.name + "' for the glass panes, " + $"queue {_glassMaterial.renderQueue}");
+		}
+		else if (_glassMaterial.shader != glassTemplate.shader)
+		{
+			_glassMaterial.shader = glassTemplate.shader;
+			MelonLogger.Warning("[L2A7V] re-pointed the sight glass at the live " + glassTemplate.shader.name);
+		}
+		return _glassMaterial;
+	}
+
+	private static Material Clone(int materialIndex, Material template, bool neutralMaps)
+	{
+		MtlDef mtlDef = ((materialIndex >= 0 && materialIndex < ObjModel.Materials.Count) ? ObjModel.Materials[materialIndex] : null);
+		Material material = new Material(template)
+		{
+			name = template.name + " (L2A7V " + materialIndex + ")"
+		};
+		bool flag = true;
+		bool flag2 = false;
+		bool flag3 = false;
+		if (mtlDef != null)
+		{
+			if (mtlDef.AlbedoPath != null)
+			{
+				Texture2D texture2D = LoadTexture(mtlDef.AlbedoPath, linear: false, Pack.None, isAlbedo: true);
+				if (texture2D != null)
+				{
+					material.SetTexture("_Albedo", texture2D);
+				}
+			}
+			if (mtlDef.NormalPath != null)
+			{
+				Texture2D texture2D2 = LoadTexture(mtlDef.NormalPath, linear: true, Pack.Normal);
+				if (texture2D2 != null)
+				{
+					material.SetTexture("_Normal", texture2D2);
+				}
+			}
+			if (flag && mtlDef.OcclusionPath != null)
+			{
+				Texture2D texture2D3 = LoadTexture(mtlDef.OcclusionPath, linear: true, Pack.None);
+				if (texture2D3 != null)
+				{
+					SetIfPresent(material, "_Occlusion", texture2D3);
+					flag2 = true;
+				}
+			}
+			if (mtlDef.GlossPath != null)
+			{
+				Texture2D texture2D4 = LoadTexture(mtlDef.GlossPath, linear: true, Pack.None);
+				if (texture2D4 != null)
+				{
+					SetIfPresent(material, "_Smoothness", texture2D4);
+					flag3 = true;
+				}
+			}
+		}
+		if (!flag2)
+		{
+			SetIfPresent(material, "_Occlusion", Texture2D.whiteTexture);
+		}
+		SetIfPresent(material, "_OcclusionStrength", 1f);
+		if (neutralMaps && !flag3)
+		{
+			SetIfPresent(material, "_Smoothness", NeutralSmoothness);
+		}
+		if (neutralMaps)
+		{
+			SetIfPresent(material, "_PaintMask", NeutralPaintMask);
+		}
+		SetIfPresent(material, "_hackcamoUVs", 0f);
+		if (material.shaderKeywords != null && material.shaderKeywords.Length != 0)
+		{
+			material.DisableKeyword("_HACKCAMOUVS_ON");
+		}
+		SetIfPresent(material, "_CamoAmount", 0f);
+		SetIfPresent(material, "_ScorchAmount", 0f);
+		SetIfPresent(material, "_snow", 0f);
+		SetIfPresent(material, "_dirt", 0f);
+		MelonLogger.Msg(string.Format("[L2A7V] material {0} '{1}' ", materialIndex, mtlDef?.Name ?? "none") + "albedo=" + FileNameOf(mtlDef?.AlbedoPath) + " normal=" + FileNameOf(mtlDef?.NormalPath) + " ao=" + FileNameOf(mtlDef?.OcclusionPath) + " gloss=" + FileNameOf(mtlDef?.GlossPath) + " " + $"neutral={neutralMaps}");
+		return material;
+	}
+
+	private static string FileNameOf(string path)
+	{
+		if (!string.IsNullOrEmpty(path))
+		{
+			return Path.GetFileName(path);
+		}
+		return "<none>";
+	}
+
+	private static void SetIfPresent(Material material, string property, Texture value)
+	{
+		if (value != null && material.HasProperty(property))
+		{
+			material.SetTexture(property, value);
+		}
+	}
+
+	private static void SetIfPresent(Material material, string property, float value)
+	{
+		if (material.HasProperty(property))
+		{
+			material.SetFloat(property, value);
+		}
+	}
+
+	private static byte Level(int value)
+	{
+		return (byte)Mathf.Clamp(value, 0, 255);
+	}
+
+	private static Texture2D FlatTexture(byte r, byte g, byte b, byte a)
+	{
+		Texture2D texture2D = new Texture2D(2, 2, TextureFormat.RGBA32, mipChain: false, linear: true)
+		{
+			name = "L2A7V_neutral"
+		};
+		Color32[] array = new Color32[4];
+		for (int i = 0; i < 4; i++)
+		{
+			array[i] = new Color32(r, g, b, a);
+		}
+		texture2D.SetPixels32(array);
+		texture2D.Apply(updateMipmaps: false);
+		return texture2D;
+	}
+
+	public static Material CreateFlatMaterial(string name, Color32 albedo, byte gloss)
+	{
+		Material templateMaterial = LpVisual.TemplateMaterial;
+		if (templateMaterial == null)
+		{
+			return null;
+		}
+		Material material = new Material(templateMaterial)
+		{
+			name = name
+		};
+		Texture2D texture2D = FlatTexture(albedo.r, albedo.g, albedo.b, albedo.a);
+		texture2D.name = name + " albedo";
+		if (material.HasProperty("_Albedo"))
+		{
+			material.SetTexture("_Albedo", texture2D);
+		}
+		Texture2D texture2D2 = FlatTexture(0, 0, 0, gloss);
+		texture2D2.name = name + " smoothness";
+		SetIfPresent(material, "_Smoothness", texture2D2);
+		SetIfPresent(material, "_Occlusion", Texture2D.whiteTexture);
+		SetIfPresent(material, "_OcclusionStrength", 1f);
+		SetIfPresent(material, "_PaintMask", NeutralPaintMask);
+		Color32[] array = new Color32[4];
+		for (int i = 0; i < 4; i++)
+		{
+			array[i] = new Color32(127, 127, byte.MaxValue, byte.MaxValue);
+		}
+		Texture2D texture2D3 = new Texture2D(2, 2, TextureFormat.RGBA32, mipChain: true, linear: false)
+		{
+			name = name + " normal"
+		};
+		texture2D3.SetPixels32(PackNormals(array));
+		texture2D3.Apply(updateMipmaps: true);
+		SetIfPresent(material, "_Normal", texture2D3);
+		SetIfPresent(material, "_hackcamoUVs", 0f);
+		if (material.shaderKeywords != null && material.shaderKeywords.Length != 0)
+		{
+			material.DisableKeyword("_HACKCAMOUVS_ON");
+		}
+		SetIfPresent(material, "_CamoAmount", 0f);
+		SetIfPresent(material, "_ScorchAmount", 0f);
+		SetIfPresent(material, "_snow", 0f);
+		SetIfPresent(material, "_dirt", 0f);
+		return material;
+	}
+
+	public static Mesh BuildMesh(LpGroup group, string cacheKey, Vector3 anchor)
+	{
+		return BuildWhere((ObjGeometry part) => part.Group == group, cacheKey, anchor);
+	}
+
+	public static Mesh BuildWhere(Predicate<ObjGeometry> select, string cacheKey, Vector3 anchor)
+	{
+		if (Meshes.TryGetValue(cacheKey, out var value))
+		{
+			return value;
+		}
+		List<Vector3> list = new List<Vector3>();
+		List<Vector2> list2 = new List<Vector2>();
+		List<Vector3> list3 = new List<Vector3>();
+		List<Vector4> list4 = new List<Vector4>();
+		Dictionary<int, List<int>> dictionary = new Dictionary<int, List<int>>();
+		List<int> list5 = new List<int>();
+		Dictionary<int, float> dictionary2 = new Dictionary<int, float>();
+		foreach (ObjGeometry geometry in ObjModel.Geometries)
+		{
+			if (select(geometry))
+			{
+				int count = list.Count;
+				for (int i = 0; i < geometry.Positions.Length; i++)
+				{
+					list.Add(geometry.Positions[i] - anchor);
+					list2.Add(geometry.Uvs[i]);
+					list3.Add(geometry.Normals[i]);
+					list4.Add(geometry.Tangents[i]);
+				}
+				float num = Mathf.Min(geometry.Bounds.size.x, Mathf.Min(geometry.Bounds.size.y, geometry.Bounds.size.z));
+				if (dictionary2.TryGetValue(geometry.MaterialIndex, out var value2))
+				{
+					dictionary2[geometry.MaterialIndex] = Mathf.Min(value2, num);
+				}
+				else
+				{
+					dictionary2[geometry.MaterialIndex] = num;
+				}
+				if (!dictionary.TryGetValue(geometry.MaterialIndex, out var value3))
+				{
+					value3 = new List<int>();
+					dictionary.Add(geometry.MaterialIndex, value3);
+					list5.Add(geometry.MaterialIndex);
+				}
+				for (int j = 0; j < geometry.Triangles.Length; j++)
+				{
+					value3.Add(geometry.Triangles[j] + count);
+				}
+			}
+		}
+		if (list.Count == 0)
+		{
+			return null;
+		}
+		Mesh mesh = new Mesh
+		{
+			name = "L2A7V_" + cacheKey,
+			indexFormat = IndexFormat.UInt32
+		};
+		mesh.SetVertices(list);
+		mesh.SetUVs(0, list2);
+		mesh.SetNormals(list3);
+		mesh.SetTangents(list4);
+		mesh.subMeshCount = list5.Count;
+		for (int k = 0; k < list5.Count; k++)
+		{
+			mesh.SetTriangles(dictionary[list5[k]], k);
+		}
+		mesh.RecalculateBounds();
+		mesh.UploadMeshData(markNoLongerReadable: true);
+		LpVisual.GroupMaterials[cacheKey] = list5;
+		List<bool> list6 = new List<bool>(list5.Count);
+		foreach (int item in list5)
+		{
+			float num2 = (dictionary2.ContainsKey(item) ? dictionary2[item] : 0f);
+			list6.Add(num2 <= 0.06f);
+		}
+		LpVisual.GroupThin[cacheKey] = list6;
+		Meshes[cacheKey] = mesh;
+		return mesh;
+	}
+
+	private static string ResolveSkin(string path)
+	{
+		string skinName = LpConfig.SkinName;
+		if (skinName.Length == 0)
+		{
+			return path;
+		}
+		string fileName = Path.GetFileName(path);
+		string[] array = ((!LpConfig.UhdTextures) ? new string[1] { "skins" } : new string[2] { "skins_uhq", "skins" });
+		foreach (string text in array)
+		{
+			string text2 = Path.Combine(LpConfig.AssetDir, text, skinName, fileName);
+			if (File.Exists(text2))
+			{
+				MelonLogger.Msg("[L2A7V] scheme '" + skinName + "': " + text + "/" + skinName + "/" + fileName);
+				return text2;
+			}
+		}
+		if (!_skinWarned && !Directory.Exists(Path.Combine(LpConfig.AssetDir, "skins", skinName)))
+		{
+			_skinWarned = true;
+			MelonLogger.Warning("[L2A7V] paint scheme '" + skinName + "' has no folder under " + Path.Combine(LpConfig.AssetDir, "skins") + "; keeping the factory scheme");
+		}
+		return path;
+	}
+
+	private static string ResolveResolution(string path)
+	{
+		if (!LpConfig.UhdTextures)
+		{
+			return path;
+		}
+		string directoryName = Path.GetDirectoryName(path);
+		if (directoryName == null || !string.Equals(Path.GetFileName(directoryName), "textures", StringComparison.OrdinalIgnoreCase))
+		{
+			return path;
+		}
+		string text = Path.Combine(Path.GetDirectoryName(directoryName), "textures_uhq", Path.GetFileName(path));
+		if (!File.Exists(text))
+		{
+			return path;
+		}
+		return text;
+	}
+
+	private static Texture2D LoadTexture(string path, bool linear, Pack pack, bool isAlbedo = false)
+	{
+		if (isAlbedo)
+		{
+			path = ResolveSkin(path);
+		}
+		path = ResolveResolution(path);
+		string key = path + "|" + pack.ToString() + ((pack == Pack.Normal) ? ("|" + _normalMode) : string.Empty) + "|" + _maxTextureSize + "|" + ((!isAlbedo) ? (-1) : 0);
+		if (Textures.TryGetValue(key, out var value))
+		{
+			return value;
+		}
+		try
+		{
+			byte[] data = File.ReadAllBytes(path);
+			Texture2D texture2D = new Texture2D(2, 2, TextureFormat.RGBA32, mipChain: false, linear: true);
+			if (!texture2D.LoadImage(data))
+			{
+				UnityEngine.Object.Destroy(texture2D);
+				return null;
+			}
+			int outWidth = texture2D.width;
+			int outHeight = texture2D.height;
+			Color32[] array = Resample(texture2D.GetPixels32(), outWidth, outHeight, Mathf.Min(outWidth, _maxTextureSize), Mathf.Min(outHeight, _maxTextureSize), out outWidth, out outHeight);
+			UnityEngine.Object.Destroy(texture2D);
+			if (pack == Pack.Normal)
+			{
+				array = PackNormals(array);
+			}
+			if (isAlbedo)
+			{
+				array = MatchAlbedoLuminance(array, path);
+			}
+			Texture2D texture2D2 = new Texture2D(outWidth, outHeight, TextureFormat.RGBA32, mipChain: true, linear)
+			{
+				name = Path.GetFileNameWithoutExtension(path),
+				filterMode = FilterMode.Trilinear,
+				anisoLevel = 4,
+				wrapMode = TextureWrapMode.Repeat
+			};
+			texture2D2.SetPixels32(array);
+			texture2D2.Apply(updateMipmaps: true);
+			Textures[key] = texture2D2;
+			return texture2D2;
+		}
+		catch (Exception ex)
+		{
+			MelonLogger.Warning("[L2A7V] texture load failed for " + path + ": " + ex.Message);
+			return null;
+		}
+	}
+
+	private static Color32[] MatchAlbedoLuminance(Color32[] source, string path)
+	{
+		int num = 0;
+		if (num <= 0)
+		{
+			return source;
+		}
+		long num2 = 0L;
+		for (int i = 0; i < source.Length; i++)
+		{
+			num2 += source[i].r + source[i].g + source[i].b;
+		}
+		float num3 = (float)num2 / ((float)source.Length * 3f);
+		if (num3 < 1f)
+		{
+			return source;
+		}
+		float num4 = Mathf.Clamp((float)num / num3, 0.55f, 1f);
+		if (num4 > 0.995f)
+		{
+			return source;
+		}
+		for (int j = 0; j < source.Length; j++)
+		{
+			Color32 color = source[j];
+			source[j] = new Color32((byte)Mathf.Clamp((float)(int)color.r * num4, 0f, 255f), (byte)Mathf.Clamp((float)(int)color.g * num4, 0f, 255f), (byte)Mathf.Clamp((float)(int)color.b * num4, 0f, 255f), color.a);
+		}
+		MelonLogger.Msg("[L2A7V] albedo " + Path.GetFileName(path) + " luminance " + $"{num3:F0} -> {num3 * num4:F0} (x{num4:F2})");
+		return source;
+	}
+
+	private static Color32[] PackNormals(Color32[] source)
+	{
+		if (_normalMode == NormalPackMode.Raw)
+		{
+			return source;
+		}
+		Color32[] array = new Color32[source.Length];
+		for (int i = 0; i < source.Length; i++)
+		{
+			Color32 color = source[i];
+			byte r = color.r;
+			byte g = color.g;
+			if (_normalMode == NormalPackMode.RedGreen)
+			{
+				array[i] = new Color32(r, g, 128, byte.MaxValue);
+			}
+			else
+			{
+				array[i] = new Color32(byte.MaxValue, g, 127, r);
+			}
+		}
+		return array;
+	}
+
+	private static Color32[] Resample(Color32[] source, int sourceWidth, int sourceHeight, int targetWidth, int targetHeight, out int outWidth, out int outHeight)
+	{
+		outWidth = targetWidth;
+		outHeight = targetHeight;
+		if (targetWidth == sourceWidth && targetHeight == sourceHeight)
+		{
+			return source;
+		}
+		Color32[] array = new Color32[targetWidth * targetHeight];
+		float num = (float)sourceWidth / (float)targetWidth;
+		float num2 = (float)sourceHeight / (float)targetHeight;
+		for (int i = 0; i < targetHeight; i++)
+		{
+			int num3 = Mathf.Clamp((int)((float)i * num2), 0, sourceHeight - 1);
+			int a = Mathf.Max(num3 + 1, Mathf.CeilToInt((float)(i + 1) * num2));
+			a = Mathf.Min(a, sourceHeight);
+			for (int j = 0; j < targetWidth; j++)
+			{
+				int num4 = Mathf.Clamp((int)((float)j * num), 0, sourceWidth - 1);
+				int a2 = Mathf.Max(num4 + 1, Mathf.CeilToInt((float)(j + 1) * num));
+				a2 = Mathf.Min(a2, sourceWidth);
+				int num5 = 0;
+				int num6 = 0;
+				int num7 = 0;
+				int num8 = 0;
+				int num9 = 0;
+				for (int k = num3; k < a; k++)
+				{
+					int num10 = k * sourceWidth;
+					for (int l = num4; l < a2; l++)
+					{
+						Color32 color = source[num10 + l];
+						num5 += color.r;
+						num6 += color.g;
+						num7 += color.b;
+						num8 += color.a;
+						num9++;
+					}
+				}
+				array[i * targetWidth + j] = new Color32((byte)(num5 / num9), (byte)(num6 / num9), (byte)(num7 / num9), (byte)(num8 / num9));
+			}
+		}
+		return array;
+	}
 }

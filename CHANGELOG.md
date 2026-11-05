@@ -1,5 +1,22 @@
 # 版本
 
+## 0.3.2
+
+**独立版：装甲与内构照 T-90M 的架构重建，替换旧的叠加路径。** 只借架构，不复制 T-90M 的数值与坐标。
+
+- **装甲改为数据驱动**：`armour_t90m_style.tsv` 35 条 L2A7V 自己的配置（外部炮塔模块、首上、内部复合、隔板、衬层）。`LpArmourBuilder` 读嵌入的 `armor.bin` 与 `Leopard2A7V.obj` 的真实网格，按模式生成 MeshCollider + UniformArmor + AAR，注册进原生碰撞组，再按**精确名称**退役供体装甲。
+  - 每辆车严格车体作用域 + 一次扫描缓存：旧版 `RootOf` 会爬到场景根，两辆同场时第二辆会认走第一辆的装甲件却退役自己的供体装甲（防护归零），同时 35 次/车全场景扫描放大多车掉帧。
+  - 构建中途异常重试时，「已存在件」计入完成判定，避免 `pieces == 0` 被误判失败后供体永不退役、新旧装甲重复计抗。
+- **内构改为数据驱动，19 个模块**（`modules_t90m_style.json` + `LpMiniJson` / `LpModuleSpec` / `LpModuleBuilder`）：Build 只建区域，Wire 在设备就绪后统一接线，预检失败整体回退不动供体。
+  - 16 个真实网格模块取自 `Interior.obj` 命名分组；3 个明确盒体（座圈电驱动、手动方向机、稳定器）；3 个 `report_only`（配电、驾驶员操纵、车长周视镜，只建可命中区域与状态文本，无原生效果）。
+  - 10 个原生 hook：ChassisDamageManager 三区、炮管/炮闩、FCS 计算机/激光、CameraSlot 昼夜、AimablePlatform 命中区、电台；`ModuleSet : IDamageStatus` 注册进 `Unit.DamageStatuses`。
+  - 弹药架按精确名称映射（`hull spare rack`→Hull、`ready rack`→Turret），泄压板最多处理 3 发实际存在且未损坏的弹药，无泄压板则 1.2 秒延迟殉爆（协程，无逐帧 Update）。
+  - 关键坑：`Assembly-CSharp` 有全局命名空间遗留的 `DestructibleComponent`，裸名会解析到旧触发类；用 `using Dc = GHPC.Equipment.DestructibleComponent;` 别名。
+- **车长独立周视镜（CITV）**：`T` 进入/退出，`T` 循环 15°/10°/4° 视场，旧 `Z` 入口删除。
+- **保留 0.3.0/0.3.1 的全部修复**：烟雾走原生换车事件、履带 NaN 首写防护、分划注册竞态、跨车搜索、AAR 事件驱动、殉爆协程等。
+- 旧 `LpArmorOverlay` / `LpModulesOwn` 与三份 `LpDm*` 草稿保留在源码里但无调用点（`LpDm*`、`LpSmokeWiring` 从编译项排除）。
+- **修正 0.3.0/0.3.1 的打包遗漏**：发布包里的 `Interior.obj` 仍是 0.2.0 时代那份（4.47 MB），现已换成内构模块使用的 19 分组版本（8.71 MB），并补上 `CitvAssets\citv_monitor`。
+
 ## 0.3.1
 
 - **修复车身/炮塔部分装甲板"双倍厚度"**：模型导出会把一个多材质物体拆成每条材质一个几何体（`ObjModel.EnsureActive`），这些几何体同名。旧代码的网格缓存只用物体名做键，于是第二条拿到的还是第一条的网格，同一块板在同一位置生成了两个形状完全相同的碰撞体——那块板实际变成两倍数值。现在缓存键带上材质索引（`物体名#材质索引`），同名的多条各自生成自己那一半，合起来正好覆盖整块板一次。

@@ -1,0 +1,29 @@
+using System.IO;
+using HarmonyLib;
+using MelonLoader;
+
+namespace Leopard2A7V;
+
+public class LpMod : MelonMod
+{
+	public override void OnInitializeMelon()
+	{
+		LpConfig.Create();
+		if (!Directory.Exists(LpConfig.AssetDir))
+		{
+			MelonLogger.Error("[L2A7V] asset folder missing: " + LpConfig.AssetDir);
+			return;
+		}
+		LpAssets.SetMaxTextureSize(LpConfig.MaxTextureSize);
+		MelonLogger.Msg("[L2A7V] texture kit: " + LpConfig.ResolutionName + ", cap " + LpConfig.MaxTextureSize + " px, schemes use skins_uhq when present");
+		ObjModel.Preload(LpConfig.AssetDir);
+		LpInterior.Preload(LpConfig.AssetDir);
+		LpPatches.Install(new HarmonyLib.Harmony("local.leopard2a7v.modelswap"));
+		MelonLogger.Msg("[L2A7V] loaded, parsing model in the background");
+	}
+
+	public override void OnSceneWasLoaded(int buildIndex, string sceneName)
+	{
+		LpUnitRegistry.RegisterEverywhere();
+	}
+}

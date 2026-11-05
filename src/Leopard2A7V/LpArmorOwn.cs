@@ -5,329 +5,358 @@ using GHPC;
 using MelonLoader;
 using UnityEngine;
 
-namespace Leopard2A7V
+namespace Leopard2A7V;
+
+public static class LpArmorOwn
 {
-    /// <summary>
-    /// Rebuilds the vehicle's protection as our own armour pieces, the way the T-90A mod does it.
-    ///
-    /// The donor's armour cannot be used directly: the 220 uniform and 33 raycast pieces live on the AAR
-    /// root, which the game tears down within half a second of the spawn, and their names are the LEO2A3's
-    /// rather than the 2A7V's. Rewriting their values therefore writes into objects that are about to be
-    /// deleted. This class takes a snapshot of their geometry while they still exist - the one window that
-    /// has them - and builds a permanent set of armour pieces from it: one box per piece, carrying the RHAe
-    /// the table specifies, parented to the donor rig bones so it turns with the vehicle.
-    /// </summary>
-    public static class LpArmorOwn
-    {
-        private const string Tag = "[L2A7V][armour]";
+	private sealed class Stats
+	{
+		internal int Seen;
 
-        private const string Marker = "L2A7V_OwnArmour";
+		internal int Resolved;
 
-        private static readonly HashSet<string> _Built = new HashSet<string>(StringComparer.Ordinal);
+		internal int NoGeometry;
 
-        private sealed class Stats
-        {
-            internal int Seen;
-            internal int Resolved;
-            internal int NoGeometry;
-            internal int Built;
-            internal int BuildFailed;
-        }
+		internal int Built;
 
-        public static bool Build(GameObject unitRoot)
-        {
-            if (unitRoot == null) return true;
+		internal int BuildFailed;
+	}
 
-            // Our own pivots are built by the visual pass two seconds later, so at this point the donor rig
-            // bones are the only transforms that exist: they are what the artwork will be parented under
-            // anyway, and they carry the turret and gun rotations.
-            Transform hull = FindPivot(unitRoot, "L2A7V_HullPivot") ?? FindBone(unitRoot, "hull");
-            Transform turret = FindPivot(unitRoot, "L2A7V_TurretPivot") ?? FindBone(unitRoot, "turret");
-            Transform gun = FindPivot(unitRoot, "L2A7V_GunPivot") ?? FindBone(unitRoot, "mantlet", "gun");
-            if (hull == null)
-            {
-                MelonLogger.Warning(Tag + " neither our hull pivot nor the donor's hull bone was found on " +
-                                    unitRoot.name + "; the protection stays donor");
-                return true;
-            }
+	private sealed class ArmorPiece
+	{
+		internal Component Source;
 
-            var stats = new Stats();
-            var used = new HashSet<string>(StringComparer.Ordinal);
-            foreach (ArmorPiece piece in Snapshot(unitRoot, used, stats))
-            {
-                Transform bone = piece.IsGun ? gun : piece.IsTurret ? turret : hull;
-                if (bone == null) bone = hull;
+		internal Collider Collider;
 
-                if (!BuildPiece(bone, piece))
-                {
-                    stats.BuildFailed++;
-                    continue;
-                }
+		internal Bounds Bounds;
 
-                // The donor's piece must stop answering hits, or two colliders sit in the same space and the
-                // shot is resolved against whichever one the physics query returns first.
-                Disable(piece);
-                stats.Built++;
-            }
+		internal LpArmor.Zone Zone;
 
-            MelonLogger.Msg(Tag + " snapshot: " + stats.Seen + " donor piece(s), " + stats.Resolved +
-                            " matched a zone, " + stats.NoGeometry + " had no geometry, " + stats.BuildFailed +
-                            " could not be boxed; built " + stats.Built + " of our own on " + unitRoot.name);
+		internal string Name;
 
-            if (stats.Built == 0 && _Built.Contains(unitRoot.name)) return true;
-            _Built.Add(unitRoot.name);
-            return true;
-        }
+		internal bool IsTurret;
 
-        /// <summary>One donor piece as it stands at spawn: where it is and what it should become.</summary>
-        private sealed class ArmorPiece
-        {
-            internal Component Source;
-            internal Collider Collider;
-            internal Bounds Bounds;
-            internal LpArmor.Zone Zone;
-            internal string Name;
-            internal bool IsTurret;
-            internal bool IsGun;
-        }
+		internal bool IsGun;
+	}
 
-        private static List<ArmorPiece> Snapshot(GameObject unitRoot, HashSet<string> used, Stats stats)
-        {
-            var pieces = new List<ArmorPiece>();
+	private const string Tag = "[L2A7V][armour]";
 
-            foreach (UniformArmor armor in unitRoot.GetComponentsInChildren<UniformArmor>(true))
-            {
-                if (armor == null) continue;
-                stats.Seen++;
-                LpArmor.Zone zone;
-                if (!LpArmor.TryResolve(armor.transform.name, armor.Name, used, out zone)) continue;
-                stats.Resolved++;
-                if (!TryAdd(pieces, armor, armor.GetComponent<Collider>(), zone)) stats.NoGeometry++;
-            }
+	private const string Marker = "L2A7V_OwnArmour";
 
-            foreach (VariableArmor armor in unitRoot.GetComponentsInChildren<VariableArmor>(true))
-            {
-                if (armor == null) continue;
-                stats.Seen++;
-                LpArmor.Zone zone;
-                if (!LpArmor.TryResolve(armor.transform.name, armor.Name, used, out zone)) continue;
-                stats.Resolved++;
-                if (!TryAdd(pieces, armor, armor.GetComponent<Collider>(), zone)) stats.NoGeometry++;
-            }
+	private static readonly HashSet<string> _Built = new HashSet<string>(StringComparer.Ordinal);
 
-            return pieces;
-        }
+	private static Material _xray;
 
-        private static bool TryAdd(List<ArmorPiece> pieces, Component source, Collider collider, LpArmor.Zone zone)
-        {
-            Bounds bounds;
-            if (!TryBounds(source, collider, out bounds)) return false;
-            if (bounds.size.sqrMagnitude < 0.000001f) return false;
+	public static bool Build(GameObject unitRoot)
+	{
+		if (unitRoot == null)
+		{
+			return true;
+		}
+		Transform transform = FindPivot(unitRoot, "L2A7V_HullPivot") ?? FindBone(unitRoot, "hull");
+		Transform transform2 = FindPivot(unitRoot, "L2A7V_TurretPivot") ?? FindBone(unitRoot, "turret");
+		Transform transform3 = FindPivot(unitRoot, "L2A7V_GunPivot") ?? FindBone(unitRoot, "mantlet", "gun");
+		if (transform == null)
+		{
+			MelonLogger.Warning("[L2A7V][armour] neither our hull pivot nor the donor's hull bone was found on " + unitRoot.name + "; the protection stays donor");
+			return true;
+		}
+		Stats stats = new Stats();
+		HashSet<string> used = new HashSet<string>(StringComparer.Ordinal);
+		foreach (ArmorPiece item in Snapshot(unitRoot, used, stats))
+		{
+			Transform transform4 = (item.IsGun ? transform3 : (item.IsTurret ? transform2 : transform));
+			if (transform4 == null)
+			{
+				transform4 = transform;
+			}
+			if (!BuildPiece(transform4, item))
+			{
+				stats.BuildFailed++;
+				continue;
+			}
+			Disable(item);
+			stats.Built++;
+		}
+		MelonLogger.Msg("[L2A7V][armour] snapshot: " + stats.Seen + " donor piece(s), " + stats.Resolved + " matched a zone, " + stats.NoGeometry + " had no geometry, " + stats.BuildFailed + " could not be boxed; built " + stats.Built + " of our own on " + unitRoot.name);
+		if (stats.Built == 0 && _Built.Contains(unitRoot.name))
+		{
+			return true;
+		}
+		_Built.Add(unitRoot.name);
+		return true;
+	}
 
-            string path = PathOf(source.transform);
-            pieces.Add(new ArmorPiece
-            {
-                Source = source,
-                Collider = collider,
-                Bounds = bounds,
-                Zone = zone,
-                Name = source.name,
-                IsTurret = path.Contains("turret") || path.Contains("cupola") || path.Contains("peri"),
-                IsGun = path.Contains("gun") || path.Contains("mantlet") || path.Contains("barrel"),
-            });
-            return true;
-        }
+	private static List<ArmorPiece> Snapshot(GameObject unitRoot, HashSet<string> used, Stats stats)
+	{
+		List<ArmorPiece> list = new List<ArmorPiece>();
+		UniformArmor[] componentsInChildren = unitRoot.GetComponentsInChildren<UniformArmor>(includeInactive: true);
+		foreach (UniformArmor uniformArmor in componentsInChildren)
+		{
+			if (uniformArmor == null)
+			{
+				continue;
+			}
+			stats.Seen++;
+			if (LpArmor.TryResolve(uniformArmor.transform.name, uniformArmor.Name, used, out var zone))
+			{
+				stats.Resolved++;
+				if (!TryAdd(list, uniformArmor, uniformArmor.GetComponent<Collider>(), zone))
+				{
+					stats.NoGeometry++;
+				}
+			}
+		}
+		VariableArmor[] componentsInChildren2 = unitRoot.GetComponentsInChildren<VariableArmor>(includeInactive: true);
+		foreach (VariableArmor variableArmor in componentsInChildren2)
+		{
+			if (variableArmor == null)
+			{
+				continue;
+			}
+			stats.Seen++;
+			if (LpArmor.TryResolve(variableArmor.transform.name, variableArmor.Name, used, out var zone2))
+			{
+				stats.Resolved++;
+				if (!TryAdd(list, variableArmor, variableArmor.GetComponent<Collider>(), zone2))
+				{
+					stats.NoGeometry++;
+				}
+			}
+		}
+		return list;
+	}
 
-        /// <summary>
-        /// Where a donor piece is. Colliders are rare, renderers not much commoner, and a good number of the
-        /// composite arrays are logic-only nodes whose mesh hangs off a child - so all three are tried, and the
-        /// mesh is the last resort because a piece with none of them cannot be turned into anything.
-        /// </summary>
-        private static bool TryBounds(Component source, Collider collider, out Bounds bounds)
-        {
-            if (collider != null && collider.bounds.size.sqrMagnitude > 0.000001f)
-            {
-                bounds = collider.bounds;
-                return true;
-            }
+	private static bool TryAdd(List<ArmorPiece> pieces, Component source, Collider collider, LpArmor.Zone zone)
+	{
+		if (!TryBounds(source, collider, out var bounds))
+		{
+			return false;
+		}
+		if (bounds.size.sqrMagnitude < 1E-06f)
+		{
+			return false;
+		}
+		string text = PathOf(source.transform);
+		pieces.Add(new ArmorPiece
+		{
+			Source = source,
+			Collider = collider,
+			Bounds = bounds,
+			Zone = zone,
+			Name = source.name,
+			IsTurret = (text.Contains("turret") || text.Contains("cupola") || text.Contains("peri")),
+			IsGun = (text.Contains("gun") || text.Contains("mantlet") || text.Contains("barrel"))
+		});
+		return true;
+	}
 
-            Renderer renderer = source.GetComponent<Renderer>() ?? source.GetComponentInChildren<Renderer>(true);
-            if (renderer != null && renderer.bounds.size.sqrMagnitude > 0.000001f)
-            {
-                bounds = renderer.bounds;
-                return true;
-            }
+	private static bool TryBounds(Component source, Collider collider, out Bounds bounds)
+	{
+		if (collider != null && collider.bounds.size.sqrMagnitude > 1E-06f)
+		{
+			bounds = collider.bounds;
+			return true;
+		}
+		Renderer renderer = source.GetComponent<Renderer>() ?? source.GetComponentInChildren<Renderer>(includeInactive: true);
+		if (renderer != null && renderer.bounds.size.sqrMagnitude > 1E-06f)
+		{
+			bounds = renderer.bounds;
+			return true;
+		}
+		MeshFilter meshFilter = source.GetComponent<MeshFilter>() ?? source.GetComponentInChildren<MeshFilter>(includeInactive: true);
+		if (meshFilter != null && meshFilter.sharedMesh != null)
+		{
+			Bounds bounds2 = meshFilter.sharedMesh.bounds;
+			Vector3 center = meshFilter.transform.TransformPoint(bounds2.center);
+			Vector3 vector = meshFilter.transform.TransformVector(bounds2.size);
+			bounds = new Bounds(center, new Vector3(Mathf.Abs(vector.x), Mathf.Abs(vector.y), Mathf.Abs(vector.z)));
+			if (bounds.size.sqrMagnitude > 1E-06f)
+			{
+				return true;
+			}
+		}
+		bounds = default(Bounds);
+		return false;
+	}
 
-            MeshFilter filter = source.GetComponent<MeshFilter>() ?? source.GetComponentInChildren<MeshFilter>(true);
-            if (filter != null && filter.sharedMesh != null)
-            {
-                Bounds local = filter.sharedMesh.bounds;
-                Vector3 centre = filter.transform.TransformPoint(local.center);
-                Vector3 size = filter.transform.TransformVector(local.size);
-                bounds = new Bounds(centre, new Vector3(Mathf.Abs(size.x), Mathf.Abs(size.y), Mathf.Abs(size.z)));
-                if (bounds.size.sqrMagnitude > 0.000001f) return true;
-            }
+	private static bool BuildPiece(Transform bone, ArmorPiece piece)
+	{
+		Collider collider = ((piece.Collider != null) ? piece.Collider : piece.Source.GetComponent<Collider>());
+		Vector3 localPosition = bone.InverseTransformPoint(piece.Bounds.center);
+		Vector3 vector = bone.InverseTransformVector(piece.Bounds.size);
+		vector = new Vector3(Mathf.Abs(vector.x), Mathf.Abs(vector.y), Mathf.Abs(vector.z));
+		if (vector.x < 0.01f && vector.y < 0.01f && vector.z < 0.01f)
+		{
+			return false;
+		}
+		GameObject gameObject = new GameObject("L2A7V_OwnArmour " + piece.Source.name);
+		gameObject.transform.SetParent(bone, worldPositionStays: false);
+		gameObject.layer = piece.Source.gameObject.layer;
+		gameObject.tag = piece.Source.gameObject.tag;
+		if (collider is MeshCollider meshCollider && meshCollider.sharedMesh != null)
+		{
+			gameObject.transform.position = collider.transform.position;
+			gameObject.transform.rotation = collider.transform.rotation;
+			MeshCollider meshCollider2 = gameObject.AddComponent<MeshCollider>();
+			meshCollider2.sharedMesh = meshCollider.sharedMesh;
+			meshCollider2.convex = false;
+		}
+		else if (collider is BoxCollider boxCollider)
+		{
+			gameObject.transform.position = boxCollider.transform.TransformPoint(boxCollider.center);
+			gameObject.transform.rotation = boxCollider.transform.rotation;
+			gameObject.transform.localScale = boxCollider.transform.lossyScale;
+			gameObject.AddComponent<BoxCollider>().size = boxCollider.size;
+		}
+		else if (collider is SphereCollider sphereCollider)
+		{
+			gameObject.transform.position = sphereCollider.transform.position;
+			gameObject.AddComponent<SphereCollider>().radius = sphereCollider.radius;
+		}
+		else if (collider is CapsuleCollider capsuleCollider)
+		{
+			gameObject.transform.position = capsuleCollider.transform.position;
+			gameObject.transform.rotation = capsuleCollider.transform.rotation;
+			CapsuleCollider capsuleCollider2 = gameObject.AddComponent<CapsuleCollider>();
+			capsuleCollider2.radius = capsuleCollider.radius;
+			capsuleCollider2.height = capsuleCollider.height;
+			capsuleCollider2.direction = capsuleCollider.direction;
+		}
+		else
+		{
+			gameObject.transform.localPosition = localPosition;
+			gameObject.transform.localRotation = Quaternion.identity;
+			gameObject.transform.localScale = Vector3.one;
+			gameObject.AddComponent<BoxCollider>().size = vector;
+		}
+		float armorScale = LpConfig.ArmorScale;
+		UniformArmor uniformArmor = gameObject.AddComponent<UniformArmor>();
+		FieldInfo[] fields = typeof(UniformArmor).GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+		foreach (FieldInfo fieldInfo in fields)
+		{
+			if (fieldInfo.IsLiteral || fieldInfo.IsInitOnly)
+			{
+				continue;
+			}
+			switch (fieldInfo.Name)
+			{
+			case "DetonatedObjects":
+			case "UndetonatedObjects":
+			case "CenterPoint":
+			case "PrimarySabotRha":
+			case "PrimaryHeatRha":
+			case "SecondarySabotRha":
+			case "SecondaryHeatRha":
+			case "ThicknessListed":
+				continue;
+			}
+			try
+			{
+				fieldInfo.SetValue(uniformArmor, fieldInfo.GetValue(piece.Source as UniformArmor));
+			}
+			catch (Exception)
+			{
+			}
+		}
+		uniformArmor.PrimarySabotRha = piece.Zone.Ke * armorScale;
+		uniformArmor.PrimaryHeatRha = piece.Zone.Ce * armorScale;
+		uniformArmor.ThicknessListed = UniformArmor.ThicknessMode.RHAE;
+		uniformArmor.AngleMatters = true;
+		uniformArmor.DetonatedObjects = Array.Empty<GameObject>();
+		uniformArmor.UndetonatedObjects = Array.Empty<GameObject>();
+		uniformArmor.CenterPoint = gameObject.transform;
+		uniformArmor.SetName(piece.Name);
+		Unit componentInParent = gameObject.GetComponentInParent<Unit>();
+		if (componentInParent != null)
+		{
+			uniformArmor.Unit = componentInParent;
+		}
+		AarVisual aarVisual = gameObject.AddComponent<AarVisual>();
+		aarVisual.HideUntilAar = true;
+		Material material = XrayMaterial();
+		if (material != null)
+		{
+			aarVisual.SwitchMaterials = true;
+			aarVisual.AarMaterial = material;
+			aarVisual.UpdateVisibility();
+		}
+		return true;
+	}
 
-            bounds = new Bounds();
-            return false;
-        }
+	internal static Material XrayMaterial()
+	{
+		if (_xray != null)
+		{
+			return _xray;
+		}
+		AarVisual[] array = Resources.FindObjectsOfTypeAll<AarVisual>();
+		foreach (AarVisual aarVisual in array)
+		{
+			if (!(aarVisual == null) && !(aarVisual.AarMaterial == null) && aarVisual.AarMaterial.name.ToLowerInvariant().Contains("see-through"))
+			{
+				_xray = aarVisual.AarMaterial;
+				break;
+			}
+		}
+		return _xray;
+	}
 
-        /// <summary>
-        /// Builds one permanent armour piece from a donor one.
-        ///
-        /// The shape is the donor's own collider where it has one, not its bounding box: an axis-aligned box
-        /// around an inclined glacis stands proud of the real plate, so a round was being stopped in the air a
-        /// little in front of the armour it was aimed at. Cloning the collider keeps the plate's own face and
-        /// its normal, which is also what makes the obliquity come out right.
-        /// </summary>
-        private static bool BuildPiece(Transform bone, ArmorPiece piece)
-        {
-            Collider source = piece.Collider != null ? piece.Collider : piece.Source.GetComponent<Collider>();
-            Vector3 centre = bone.InverseTransformPoint(piece.Bounds.center);
-            Vector3 size = bone.InverseTransformVector(piece.Bounds.size);
-            size = new Vector3(Mathf.Abs(size.x), Mathf.Abs(size.y), Mathf.Abs(size.z));
-            if (size.x < 0.01f && size.y < 0.01f && size.z < 0.01f) return false;
+	private static void Disable(ArmorPiece piece)
+	{
+		if (piece.Collider != null)
+		{
+			piece.Collider.enabled = false;
+		}
+		if (piece.Source is Behaviour behaviour)
+		{
+			behaviour.enabled = false;
+		}
+	}
 
-            var go = new GameObject(Marker + " " + piece.Source.name);
-            go.transform.SetParent(bone, false);
-            go.layer = piece.Source.gameObject.layer;
-            go.tag = piece.Source.gameObject.tag;
+	private static Transform FindPivot(GameObject unitRoot, string name)
+	{
+		Transform[] componentsInChildren = unitRoot.GetComponentsInChildren<Transform>(includeInactive: true);
+		foreach (Transform transform in componentsInChildren)
+		{
+			if (transform != null && transform.name == name)
+			{
+				return transform;
+			}
+		}
+		return null;
+	}
 
-            if (source is MeshCollider meshSource && meshSource.sharedMesh != null)
-            {
-                go.transform.position = source.transform.position;
-                go.transform.rotation = source.transform.rotation;
-                MeshCollider mesh = go.AddComponent<MeshCollider>();
-                mesh.sharedMesh = meshSource.sharedMesh;
-                mesh.convex = false;
-            }
-            else if (source is BoxCollider boxSource)
-            {
-                go.transform.position = boxSource.transform.TransformPoint(boxSource.center);
-                go.transform.rotation = boxSource.transform.rotation;
-                go.transform.localScale = boxSource.transform.lossyScale;
-                BoxCollider box = go.AddComponent<BoxCollider>();
-                box.size = boxSource.size;
-            }
-            else if (source is SphereCollider sphereSource)
-            {
-                go.transform.position = sphereSource.transform.position;
-                SphereCollider sphere = go.AddComponent<SphereCollider>();
-                sphere.radius = sphereSource.radius;
-            }
-            else if (source is CapsuleCollider capsuleSource)
-            {
-                go.transform.position = capsuleSource.transform.position;
-                go.transform.rotation = capsuleSource.transform.rotation;
-                CapsuleCollider capsule = go.AddComponent<CapsuleCollider>();
-                capsule.radius = capsuleSource.radius;
-                capsule.height = capsuleSource.height;
-                capsule.direction = capsuleSource.direction;
-            }
-            else
-            {
-                // No collider to copy: fall back to the bounding box, which is all the piece has ever given us.
-                go.transform.localPosition = centre;
-                go.transform.localRotation = Quaternion.identity;
-                go.transform.localScale = Vector3.one;
-                BoxCollider fallback = go.AddComponent<BoxCollider>();
-                fallback.size = size;
-            }
+	private static Transform FindBone(GameObject unitRoot, params string[] names)
+	{
+		Transform[] componentsInChildren = unitRoot.GetComponentsInChildren<Transform>(includeInactive: true);
+		foreach (Transform transform in componentsInChildren)
+		{
+			if (transform == null)
+			{
+				continue;
+			}
+			string text = transform.name.ToLowerInvariant();
+			foreach (string text2 in names)
+			{
+				if (text == text2)
+				{
+					return transform;
+				}
+			}
+		}
+		return null;
+	}
 
-            float scale = LpConfig.ArmorScale;
-            var armor = go.AddComponent<UniformArmor>();
-
-            // Everything else comes over from the donor piece: its armour codex (which decides spall, ricochet
-            // and long-rod shatter), surface material, spall angles and codename. Only the thickness is ours.
-            foreach (FieldInfo field in typeof(UniformArmor).GetFields(
-                         BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
-            {
-                if (field.IsLiteral || field.IsInitOnly) continue;
-                string fieldName = field.Name;
-                if (fieldName == "DetonatedObjects" || fieldName == "UndetonatedObjects" ||
-                    fieldName == "CenterPoint" || fieldName == "PrimarySabotRha" ||
-                    fieldName == "PrimaryHeatRha" || fieldName == "SecondarySabotRha" ||
-                    fieldName == "SecondaryHeatRha" || fieldName == "ThicknessListed") continue;
-                try { field.SetValue(armor, field.GetValue(piece.Source as UniformArmor)); }
-                catch (Exception) { }
-            }
-
-            armor.PrimarySabotRha = piece.Zone.Ke * scale;
-            armor.PrimaryHeatRha = piece.Zone.Ce * scale;
-            armor.ThicknessListed = UniformArmor.ThicknessMode.RHAE;
-            armor.AngleMatters = true;
-            armor.DetonatedObjects = Array.Empty<GameObject>();
-            armor.UndetonatedObjects = Array.Empty<GameObject>();
-            armor.CenterPoint = go.transform;
-            armor.SetName(piece.Name);
-
-            var unit = go.GetComponentInParent<Unit>();
-            if (unit != null) armor.Unit = unit;
-
-            // The x-ray view only draws armour that carries an AarVisual, which is what makes a penetrated
-            // plate readable in the after-action report. The material is taken from any vanilla visual in the
-            // scene rather than authored here: it is the game's own teal see-through, and hard-coding one would
-            // go stale the moment the shader changes.
-            AarVisual aar = go.AddComponent<AarVisual>();
-            aar.HideUntilAar = true;
-            Material xray = XrayMaterial();
-            if (xray != null)
-            {
-                aar.SwitchMaterials = true;
-                aar.AarMaterial = xray;
-                aar.UpdateVisibility();
-            }
-            return true;
-        }
-
-        private static Material _xray;
-
-        /// <summary>The game's own see-through armour material, borrowed from a live AarVisual.</summary>
-        internal static Material XrayMaterial()
-        {
-            if (_xray != null) return _xray;
-            foreach (AarVisual visual in Resources.FindObjectsOfTypeAll<AarVisual>())
-            {
-                if (visual == null || visual.AarMaterial == null) continue;
-                if (!visual.AarMaterial.name.ToLowerInvariant().Contains("see-through")) continue;
-                _xray = visual.AarMaterial;
-                break;
-            }
-            return _xray;
-        }
-
-        private static void Disable(ArmorPiece piece)
-        {
-            if (piece.Collider != null) piece.Collider.enabled = false;
-            if (piece.Source is Behaviour behaviour) behaviour.enabled = false;
-        }
-
-        private static Transform FindPivot(GameObject unitRoot, string name)
-        {
-            foreach (Transform node in unitRoot.GetComponentsInChildren<Transform>(true))
-                if (node != null && node.name == name) return node;
-            return null;
-        }
-
-        /// <summary>The donor's own rig bone by name, used until our pivots exist.</summary>
-        private static Transform FindBone(GameObject unitRoot, params string[] names)
-        {
-            foreach (Transform node in unitRoot.GetComponentsInChildren<Transform>(true))
-            {
-                if (node == null) continue;
-                string name = node.name.ToLowerInvariant();
-                foreach (string wanted in names)
-                    if (name == wanted) return node;
-            }
-            return null;
-        }
-
-        private static string PathOf(Transform node)
-        {
-            string path = node != null ? node.name : string.Empty;
-            for (Transform p = node != null ? node.parent : null; p != null; p = p.parent)
-                path = p.name + "/" + path;
-            return path.ToLowerInvariant();
-        }
-    }
+	private static string PathOf(Transform node)
+	{
+		string text = ((node != null) ? node.name : string.Empty);
+		Transform transform = ((node != null) ? node.parent : null);
+		while (transform != null)
+		{
+			text = transform.name + "/" + text;
+			transform = transform.parent;
+		}
+		return text.ToLowerInvariant();
+	}
 }

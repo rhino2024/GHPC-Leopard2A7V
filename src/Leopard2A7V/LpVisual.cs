@@ -1,459 +1,460 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Text;
+using GHPC;
 using GHPC.Thermals;
 using HarmonyLib;
 using MelonLoader;
-using GHPC;
 using UnityEngine;
+using UnityEngine.Rendering;
 
-namespace Leopard2A7V
+namespace Leopard2A7V;
+
+public static class LpVisual
 {
-    /// <summary>
-    /// Builds the imported Leopard 2A7V art on the bones the donor's own art is bound to.
-    ///
-    /// The prefab dump settles which transforms those are: the AimablePlatform on "---TURRET SCRIPTS---"
-    /// poses leo2_rig/hull/turret and the one on "---MAIN GUN SCRIPTS---/Rh-120_L/44" poses its child
-    /// mantlet, while the "TURRET" and "GUN" nodes under M1IP_interior only carry LateFollow and are
-    /// therefore passengers. Every other turret-mounted thing (the armour colliders, the interior shell,
-    /// the optics, the sight covers, the camo nets) is re-parented or re-followed onto those same two
-    /// bones, so hanging the imported turret and gun on them leaves the whole donor vehicle logic intact
-    /// and lines our art up with the colliders and eyepieces that were authored against it.
-    ///
-    /// Each group is placed so that its own pivot point sits exactly on the origin of the bone that
-    /// turns it. That matters: the turret ring is 7.7 cm aft of and 3.2 cm below the donor's bone, and
-    /// a group hung off-centre would swing through an arc of that radius as the turret traverses.
-    /// </summary>
-    public static class LpVisual
-    {
-        public static Material TemplateMaterial;
+	public sealed class Assembly
+	{
+		public Transform Hull;
 
-        /// <summary>
-        /// The donor's own glazing, refreshed per spawn. The sight windows are the one part of the art the
-        /// painted template cannot draw: the War Thunder export dresses them in an opaque grey albedo, which
-        /// reads as a textured panel. "fake glass" on Standard (FLIR) is what GHPC itself draws them with.
-        /// </summary>
-        public static Material GlassTemplate;
+		public Transform Turret;
 
-        /// <summary>Submesh order per group cache key, published by LpAssets.BuildMesh.</summary>
-        public static readonly Dictionary<string, List<int>> GroupMaterials = new Dictionary<string, List<int>>();
+		public Transform Gun;
 
-        /// <summary>Which of those submeshes are panes rather than plates, same key and order.</summary>
-        public static readonly Dictionary<string, List<bool>> GroupThin = new Dictionary<string, List<bool>>();
+		public Transform CommanderGear;
 
-        public const string CommanderGearNode = "CommanderGear";
+		public Transform CommanderSight;
 
-        public const string GlassShaderName = "Standard (FLIR)";
+		public Transform RoofGunYaw;
 
-        private const string RigRoot = "leo2_rig";
-        private const string HullBone = "hull";
-        private const string TurretBone = "turret";
-        private const string MantletBone = "mantlet";
-        private const string VehicleShaderName = "GHPC/VehicleShader";
+		public Transform RoofGunPitch;
 
-        private static int _visualLayer = -1;
-        private static readonly FieldInfo HeatBackingField = AccessTools.Field(typeof(HeatSource), "_heat");
+		public Transform RoofGunYawArt;
 
-        /// <summary>The pivots of the last unit built, in the order LpSightView needs them.</summary>
-        public sealed class Assembly
-        {
-            public Transform Hull;
-            public Transform Turret;
-            public Transform Gun;
-            public Transform CommanderGear;
-            public Transform CommanderSight;
-            public Transform RoofGunYaw;
-            public Transform RoofGunPitch;
+		public Transform RoofGunPitchArt;
 
-            /// <summary>
-            /// The machine gun's own art, kept separate from its pivots because a sight view hides art by
-            /// scaling it down, and shrinking a pivot would take the muzzle, the rack and the eyepiece that
-            /// hang under it along with it.
-            /// </summary>
-            public Transform RoofGunYawArt;
-            public Transform RoofGunPitchArt;
+		public GameObject Marker;
+	}
 
-            public GameObject Marker;
-        }
+	public static Material TemplateMaterial;
 
-        public static bool IsReady => ObjModel.Loaded && !ObjModel.Failed;
+	public static Material GlassTemplate;
 
-        public static Assembly Convert(GameObject unitRoot)
-        {
-            if (!IsReady) return null;
-            if (FindDeep(unitRoot.transform, LpConfig.VisualRootName) != null) return null;
-            if (!CaptureTemplateMaterial(unitRoot)) return null;
-            CaptureGlassMaterial(unitRoot);
-            int repaired = LpAssets.RepairShader(TemplateMaterial.shader);
-            repaired += LpInterior.RepairShader(TemplateMaterial.shader);
-            if (repaired > 0)
-                MelonLogger.Warning($"[L2A7V] re-pointed {repaired} cached material(s) onto " +
-                                    TemplateMaterial.shader.name + ", the previous bundle copy had died");
+	public static readonly Dictionary<string, List<int>> GroupMaterials = new Dictionary<string, List<int>>();
 
-            Transform unit = unitRoot.transform;
-            Transform rig = FindDeep(unit, RigRoot);
-            Transform hullBone = rig == null ? null : rig.Find(HullBone);
-            Transform turretBone = hullBone == null ? null : hullBone.Find(TurretBone);
-            Transform mantletBone = turretBone == null ? null : turretBone.Find(MantletBone);
+	public static readonly Dictionary<string, List<bool>> GroupThin = new Dictionary<string, List<bool>>();
 
-            if (turretBone == null || mantletBone == null)
-            {
-                MelonLogger.Error("[L2A7V] the donor rig bones " + RigRoot + "/" + HullBone + "/" + TurretBone +
-                                  "/" + MantletBone + " are missing, so the imported art has nothing to ride");
-                return null;
-            }
-            if (rig != null) MelonLogger.Msg($"[L2A7V] drive bones: turret {Describe(turretBone)}, gun {Describe(mantletBone)}");
+	public const string CommanderGearNode = "CommanderGear";
 
-            // The art's own origin, which is what the road-wheel fit aligns, rides the hull bone so the
-            // imported hull follows the suspension pose exactly like the donor's skinned hull art does.
-            // The turret and gun anchors stay in model space: BuildMesh subtracts them from the model's
-            // own vertex positions, so only the hull pivot carries the unit-frame offset. Reading them
-            // against the bones leaves the 7.7 cm ring and 7.5 cm trunnion residuals, which is the shift
-            // this design accepts at the hidden joints rather than in the visible hull.
-            Vector3 offset = LpConfig.Offset;
-            Vector3 ring = LpConfig.TurretAxis;
-            Vector3 trunnion = LpConfig.GunAxis;
+	public const string GlassShaderName = "Standard (FLIR)";
 
-            var result = new Assembly();
-            try
-            {
-                var marker = new GameObject(LpConfig.VisualRootName);
-                marker.transform.SetParent(unit, false);
-                result.Marker = marker;
+	private const string RigRoot = "leo2_rig";
 
-                Transform hullBoneOrRoot = hullBone != null ? hullBone : unit;
-                Vector3 hullLocal = hullBone != null
-                    ? hullBone.InverseTransformPoint(unit.TransformPoint(offset))
-                    : offset;
-                result.Hull = MakePivot(hullBoneOrRoot, "L2A7V_HullPivot", hullLocal);
-                AttachGroup(result.Hull, "Hull", LpGroup.Hull, Vector3.zero);
+	private const string HullBone = "hull";
 
-                if (!LpConfig.UseDonorRunningGear)
-                    LpRunningGear.Attach(result.Hull, unit);
+	private const string TurretBone = "turret";
 
-                result.Turret = MakePivot(turretBone, "L2A7V_TurretPivot", Vector3.zero);
-                // The lids are merged back into the turret mesh on purpose. Taking them out and spawning them
-                // from a bundle gave every lid the wrong atlas slot (the bundle carries geometry only, and the
-                // turret's first material is not the one the lid was cut from) and put them in the wrong place.
-                // They are meant to stay shut anyway, and a merged lid is textured and positioned for free.
-                AttachGroup(result.Turret, "Turret", LpGroup.Turret, ring);
+	private const string MantletBone = "mantlet";
 
-                // The cupola sight tube and the anti-aircraft gun. The donor rotates its own PERI through
-                // the "peri" bone, but that bone is a skin bind of the turret art we hide, so this group
-                // rides the turret instead: the tube stays with the hatch rather than with his view.
-                // The mount and receiver leave the bucket when the machine gun is made drivable, because
-                // they turn on their own two axes rather than with the cupola.
-                result.CommanderGear = MakePivot(turretBone, "L2A7V_CupolaPivot", Vector3.zero);
-                AttachParts(result.CommanderGear, CommanderGearNode,
-                    part => part.Group == LpGroup.CommanderGear &&
-                          !LpCommanderSight.IsSightPart(part.ObjectName) &&
-                          !(LpConfig.AddRoofGun && LpRoofGun.IsRoofGunPart(part.ObjectName)), ring);
-                // The sight head is split out of that merged mesh so it can turn with the commander's view.
-                result.CommanderSight = LpCommanderSight.AttachHead(turretBone, ring);
+	private const string VehicleShaderName = "GHPC/VehicleShader";
 
-                result.Gun = MakePivot(mantletBone, "L2A7V_GunPivot", Vector3.zero);
-                AttachGroup(result.Gun, "Gun", LpGroup.Gun, trunnion);
+	private static int _visualLayer = -1;
 
-                LpRoofGun.Apply(unitRoot, result, ring);
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Error("[L2A7V] visual build failed: " + ex);
-                if (result.Marker != null) UnityEngine.Object.Destroy(result.Marker);
-                return null;
-            }
+	private static readonly FieldInfo HeatBackingField = AccessTools.Field(typeof(HeatSource), "_heat");
 
-            LpInterior.Attach(unitRoot, result);
-            // The x-ray picture is the imported compartment now, so the donor's own compartment, crew and rack
-            // visuals are taken out of it while the report is up. Both drawn is two interiors in one vehicle.
-            if (LpConfig.ShowInterior) LpDonorInterior.Attach(unitRoot);
-            LpSightView.Attach(unitRoot, result);
-            // Every reticle this vehicle owns gets a key of its own in the game's sorted post-mesh list, so two
-            // 2A7Vs in one scene can no longer knock each other's graticules out of it.
-            LpReticleOrder.Apply(unitRoot);
-            if (unitRoot.GetComponent<LpReticleWatch>() == null)
-                unitRoot.AddComponent<LpReticleWatch>();
-            LpThermal.Apply(unitRoot);
-            LpBaseRig.Apply(unit);
-            LpDonorArt.Request(unitRoot);
-            LpArmorLog.Apply(unitRoot);
-            MelonLogger.Msg("[L2A7V] armour at conversion: " +
-                            unitRoot.GetComponentsInChildren<UniformArmor>(true).Length + " uniform + " +
-                            unitRoot.GetComponentsInChildren<VariableArmor>(true).Length +
-                            " measured on '" + unitRoot.name + "'");
-            ApplyHeat(result);
-            LpDiagnostics.DumpOnce(unitRoot);
-            // Added plates only, exactly the way the Leopard 2A7HU mod does it: the donor's own armour keeps
-            // every value and every collider it shipped with, and this pass puts the 2A7V's packages where the
-            // visible applique and the x-ray arrays say they are.
-            Transform armorRoot = hullBone != null ? hullBone : unit;
-            Vector3 armorLocal = hullBone != null
-                ? hullBone.InverseTransformPoint(unit.TransformPoint(LpConfig.Offset))
-                : LpConfig.Offset;
-            LpArmorOverlay.Apply(unitRoot, turretBone, armorRoot, armorLocal);
-            LpDonorArtWatch.SetConverted(unitRoot);
-            return result;
-        }
+	public static bool IsReady
+	{
+		get
+		{
+			if (ObjModel.Loaded)
+			{
+				return !ObjModel.Failed;
+			}
+			return false;
+		}
+	}
 
-        /// <summary>
-        /// Creates the node a group hangs from. A zero local position puts the pivot on the drive bone's
-        /// own origin, which is where that bone's rotation has no lever arm and therefore no arc.
-        /// </summary>
-        public static Transform MakePivot(Transform bone, string name, Vector3 localPosition)
-        {
-            var node = new GameObject(name);
-            Transform t = node.transform;
-            t.SetParent(bone, false);
-            t.localPosition = localPosition;
-            t.localRotation = Quaternion.identity;
+	public static Assembly Convert(GameObject unitRoot)
+	{
+		if (!IsReady)
+		{
+			return null;
+		}
+		if (FindDeep(unitRoot.transform, "Leopard2A7V_Visual") != null)
+		{
+			return null;
+		}
+		if (!CaptureTemplateMaterial(unitRoot))
+		{
+			return null;
+		}
+		CaptureGlassMaterial(unitRoot);
+		int num = LpAssets.RepairShader(TemplateMaterial.shader);
+		num += LpInterior.RepairShader(TemplateMaterial.shader);
+		if (num > 0)
+		{
+			MelonLogger.Warning($"[L2A7V] re-pointed {num} cached material(s) onto " + TemplateMaterial.shader.name + ", the previous bundle copy had died");
+		}
+		Transform transform = unitRoot.transform;
+		Transform transform2 = FindDeep(transform, "leo2_rig");
+		Transform transform3 = ((transform2 == null) ? null : transform2.Find("hull"));
+		Transform transform4 = ((transform3 == null) ? null : transform3.Find("turret"));
+		Transform transform5 = ((transform4 == null) ? null : transform4.Find("mantlet"));
+		if (transform4 == null || transform5 == null)
+		{
+			MelonLogger.Error("[L2A7V] the donor rig bones leo2_rig/hull/turret/mantlet are missing, so the imported art has nothing to ride");
+			return null;
+		}
+		if (transform2 != null)
+		{
+			MelonLogger.Msg("[L2A7V] drive bones: turret " + Describe(transform4) + ", gun " + Describe(transform5));
+		}
+		Vector3 offset = LpConfig.Offset;
+		Vector3 turretAxis = LpConfig.TurretAxis;
+		Vector3 gunAxis = LpConfig.GunAxis;
+		Assembly assembly = new Assembly();
+		try
+		{
+			GameObject gameObject = new GameObject("Leopard2A7V_Visual");
+			gameObject.transform.SetParent(transform, worldPositionStays: false);
+			assembly.Marker = gameObject;
+			Transform bone = ((transform3 != null) ? transform3 : transform);
+			Vector3 localPosition = ((transform3 != null) ? transform3.InverseTransformPoint(transform.TransformPoint(offset)) : offset);
+			assembly.Hull = MakePivot(bone, "L2A7V_HullPivot", localPosition);
+			AttachGroup(assembly.Hull, "Hull", LpGroup.Hull, Vector3.zero);
+			if (!LpConfig.UseDonorRunningGear)
+			{
+				LpRunningGear.Attach(assembly.Hull, transform);
+			}
+			assembly.Turret = MakePivot(transform4, "L2A7V_TurretPivot", Vector3.zero);
+			AttachGroup(assembly.Turret, "Turret", LpGroup.Turret, turretAxis);
+			assembly.CommanderGear = MakePivot(transform4, "L2A7V_CupolaPivot", Vector3.zero);
+			AttachParts(assembly.CommanderGear, "CommanderGear", (ObjGeometry part) => part.Group == LpGroup.CommanderGear && !LpCommanderSight.IsSightPart(part.ObjectName) && (!LpConfig.AddRoofGun || !LpRoofGun.IsRoofGunPart(part.ObjectName)), turretAxis);
+			assembly.CommanderSight = LpCommanderSight.AttachHead(transform4, turretAxis);
+			assembly.Gun = MakePivot(transform5, "L2A7V_GunPivot", Vector3.zero);
+			AttachGroup(assembly.Gun, "Gun", LpGroup.Gun, gunAxis);
+			LpRoofGun.Apply(unitRoot, assembly, turretAxis);
+		}
+		catch (Exception ex)
+		{
+			MelonLogger.Error("[L2A7V] visual build failed: " + ex);
+			if (assembly.Marker != null)
+			{
+				UnityEngine.Object.Destroy(assembly.Marker);
+			}
+			return null;
+		}
+		LpInterior.Attach(unitRoot, assembly);
+		if (LpConfig.ShowInterior)
+		{
+			LpDonorInterior.Attach(unitRoot);
+		}
+		LpSightView.Attach(unitRoot, assembly);
+		LpReticleOrder.Apply(unitRoot);
+		if (unitRoot.GetComponent<LpReticleWatch>() == null)
+		{
+			unitRoot.AddComponent<LpReticleWatch>();
+		}
+		LpThermal.Apply(unitRoot);
+		LpBaseRig.Apply(transform);
+		LpDonorArt.Request(unitRoot);
+		LpArmorLog.Apply(unitRoot);
+		MelonLogger.Msg("[L2A7V] armour at conversion: " + unitRoot.GetComponentsInChildren<UniformArmor>(includeInactive: true).Length + " uniform + " + unitRoot.GetComponentsInChildren<VariableArmor>(includeInactive: true).Length + " measured on '" + unitRoot.name + "'");
+		ApplyHeat(assembly);
+		LpDiagnostics.DumpOnce(unitRoot);
+		LpDonorArtWatch.SetConverted(unitRoot);
+		return assembly;
+	}
 
-            Vector3 parentScale = bone.lossyScale;
-            var compensation = new Vector3(
-                SafeReciprocal(parentScale.x), SafeReciprocal(parentScale.y), SafeReciprocal(parentScale.z));
-            if (compensation != Vector3.one)
-                MelonLogger.Warning($"[L2A7V] {bone.name} is scaled {parentScale}, {name} compensates with {compensation}");
-            t.localScale = compensation;
-            return t;
-        }
+	public static Transform MakePivot(Transform bone, string name, Vector3 localPosition)
+	{
+		Transform transform = new GameObject(name).transform;
+		transform.SetParent(bone, worldPositionStays: false);
+		transform.localPosition = localPosition;
+		transform.localRotation = Quaternion.identity;
+		Vector3 lossyScale = bone.lossyScale;
+		Vector3 vector = new Vector3(SafeReciprocal(lossyScale.x), SafeReciprocal(lossyScale.y), SafeReciprocal(lossyScale.z));
+		if (vector != Vector3.one)
+		{
+			MelonLogger.Warning($"[L2A7V] {bone.name} is scaled {lossyScale}, {name} compensates with {vector}");
+		}
+		transform.localScale = vector;
+		return transform;
+	}
 
-        private static float SafeReciprocal(float value)
-        {
-            return Mathf.Abs(value) < 1e-5f ? 1f : 1f / value;
-        }
+	private static float SafeReciprocal(float value)
+	{
+		if (!(Mathf.Abs(value) < 1E-05f))
+		{
+			return 1f / value;
+		}
+		return 1f;
+	}
 
-        private static bool IsLid(string partName)
-        {
-            return !string.IsNullOrEmpty(partName) &&
-                   partName.StartsWith("hatch_", StringComparison.OrdinalIgnoreCase);
-        }
+	private static bool IsLid(string partName)
+	{
+		if (!string.IsNullOrEmpty(partName))
+		{
+			return partName.StartsWith("hatch_", StringComparison.OrdinalIgnoreCase);
+		}
+		return false;
+	}
 
-        private static void AttachGroup(Transform parent, string name, LpGroup group, Vector3 anchor)
-        {
-            AttachParts(parent, name, part => part.Group == group, anchor);
-        }
+	private static void AttachGroup(Transform parent, string name, LpGroup group, Vector3 anchor)
+	{
+		AttachParts(parent, name, (ObjGeometry part) => part.Group == group, anchor);
+	}
 
-        /// <summary>
-        /// Builds and attaches whatever geometry the selector accepts. A group is only a bucket of parts, so
-        /// a caller that needs a bucket split - the roof gun, whose mount turns one way and whose receiver
-        /// another - selects the parts by name instead of taking the whole group.
-        /// </summary>
-        public static MeshRenderer AttachParts(Transform parent, string name, System.Predicate<ObjGeometry> select,
-            Vector3 anchor)
-        {
-            return AttachMesh(parent, name, LpAssets.BuildWhere(select, name, anchor));
-        }
+	public static MeshRenderer AttachParts(Transform parent, string name, Predicate<ObjGeometry> select, Vector3 anchor)
+	{
+		return AttachMesh(parent, name, LpAssets.BuildWhere(select, name, anchor));
+	}
 
-        /// <summary>
-        /// Puts a finished mesh on the tree as a shadow-casting, probe-lit piece of our own art. The material
-        /// list is resolved by node name, which is the key LpAssets published the submesh order under. The
-        /// renderer comes back so a caller whose materials are not part of that table - the scrolling tread,
-        /// which clones the donor's sheet instead of the painted template - can hand it over.
-        /// </summary>
-        public static MeshRenderer AttachMesh(Transform parent, string name, Mesh mesh)
-        {
-            if (mesh == null)
-            {
-                MelonLogger.Warning("[L2A7V] no geometry for " + name);
-                return null;
-            }
+	public static MeshRenderer AttachMesh(Transform parent, string name, Mesh mesh)
+	{
+		if (mesh == null)
+		{
+			MelonLogger.Warning("[L2A7V] no geometry for " + name);
+			return null;
+		}
+		GameObject gameObject = new GameObject(name);
+		gameObject.transform.SetParent(parent, worldPositionStays: false);
+		gameObject.layer = ((_visualLayer >= 0) ? _visualLayer : parent.gameObject.layer);
+		gameObject.AddComponent<MeshFilter>().sharedMesh = mesh;
+		MeshRenderer meshRenderer = gameObject.AddComponent<MeshRenderer>();
+		if (GroupMaterials.TryGetValue(name, out var value))
+		{
+			if (!GroupThin.TryGetValue(name, out var value2))
+			{
+				value2 = new List<bool>();
+			}
+			Material[] array = new Material[value.Count];
+			for (int i = 0; i < value.Count; i++)
+			{
+				array[i] = LpAssets.GetMaterial(value[i], name, i < value2.Count && value2[i]);
+				if (array[i] == null)
+				{
+					MelonLogger.Warning("[L2A7V] material unavailable for index " + value[i]);
+				}
+			}
+			meshRenderer.sharedMaterials = array;
+		}
+		meshRenderer.shadowCastingMode = ShadowCastingMode.On;
+		meshRenderer.receiveShadows = true;
+		meshRenderer.lightProbeUsage = LightProbeUsage.BlendProbes;
+		meshRenderer.reflectionProbeUsage = ReflectionProbeUsage.BlendProbes;
+		return meshRenderer;
+	}
 
-            var node = new GameObject(name);
-            node.transform.SetParent(parent, false);
-            node.layer = _visualLayer >= 0 ? _visualLayer : parent.gameObject.layer;
+	private static bool CaptureTemplateMaterial(GameObject unitRoot)
+	{
+		if (TemplateMaterial != null && TemplateMaterial.shader != null && string.Equals(TemplateMaterial.shader.name, "GHPC/VehicleShader", StringComparison.Ordinal))
+		{
+			return true;
+		}
+		Renderer renderer = null;
+		Material templateMaterial = null;
+		int num = int.MinValue;
+		Renderer[] componentsInChildren = unitRoot.GetComponentsInChildren<Renderer>(includeInactive: true);
+		foreach (Renderer renderer2 in componentsInChildren)
+		{
+			if (IsImportedArt(renderer2.transform))
+			{
+				continue;
+			}
+			Material material = null;
+			Material[] sharedMaterials = renderer2.sharedMaterials;
+			foreach (Material material2 in sharedMaterials)
+			{
+				if (material2 != null && material2.shader != null && material2.shader.name == "GHPC/VehicleShader")
+				{
+					material = material2;
+					break;
+				}
+			}
+			if (!(material == null))
+			{
+				string text = material.name.ToLowerInvariant();
+				string text2 = PathOf(renderer2.transform).ToLowerInvariant();
+				int num2 = 1;
+				if (text2.Contains("leo2_mesh"))
+				{
+					num2 += 8;
+				}
+				if (text.StartsWith("leo2"))
+				{
+					num2 += 4;
+				}
+				if (text2.Contains("hull") || text2.Contains("turret"))
+				{
+					num2 += 2;
+				}
+				if (text.Contains("tricolour"))
+				{
+					num2++;
+				}
+				if (text.Contains("void") || text.Contains("see-through"))
+				{
+					num2 -= 12;
+				}
+				if (text2.Contains("interior") || text2.Contains("collider") || text2.Contains("hitzone"))
+				{
+					num2 -= 10;
+				}
+				if (text2.Contains("running gear") || text2.Contains("track"))
+				{
+					num2 -= 3;
+				}
+				if (num2 > num)
+				{
+					num = num2;
+					renderer = renderer2;
+					templateMaterial = material;
+				}
+			}
+		}
+		if (renderer == null)
+		{
+			Shader shader = Shader.Find("GHPC/VehicleShader");
+			if (shader == null || TemplateMaterial == null)
+			{
+				MelonLogger.Error("[L2A7V] could not find a live GHPC/VehicleShader to clone, so this spawn is left as the donor");
+				return false;
+			}
+			TemplateMaterial.shader = shader;
+			MelonLogger.Warning("[L2A7V] no donor renderer reported GHPC/VehicleShader, revived the cached template through Shader.Find");
+			return true;
+		}
+		TemplateMaterial = templateMaterial;
+		_visualLayer = renderer.gameObject.layer;
+		LpAssets.ConfigureFromTemplate(TemplateMaterial);
+		MelonLogger.Msg("[L2A7V] shader template '" + TemplateMaterial.name + "' / " + $"'{TemplateMaterial.shader.name}' from {PathOf(renderer.transform)}, layer {_visualLayer}");
+		return true;
+	}
 
-            var filter = node.AddComponent<MeshFilter>();
-            filter.sharedMesh = mesh;
+	private static void CaptureGlassMaterial(GameObject unitRoot)
+	{
+		if (GlassTemplate != null && GlassTemplate.shader != null && GlassTemplate.shader.name == "Standard (FLIR)")
+		{
+			return;
+		}
+		Material material = null;
+		int num = int.MinValue;
+		Renderer[] componentsInChildren = unitRoot.GetComponentsInChildren<Renderer>(includeInactive: true);
+		foreach (Renderer renderer in componentsInChildren)
+		{
+			if (IsImportedArt(renderer.transform))
+			{
+				continue;
+			}
+			Material[] sharedMaterials = renderer.sharedMaterials;
+			foreach (Material material2 in sharedMaterials)
+			{
+				if (!(material2 == null) && !(material2.shader == null))
+				{
+					string text = material2.name.ToLowerInvariant();
+					int num2 = 0;
+					if (text.Contains("glass"))
+					{
+						num2 += 6;
+					}
+					if (text.Contains("fake glass"))
+					{
+						num2 += 4;
+					}
+					if (material2.shader.name == "Standard (FLIR)")
+					{
+						num2 += 8;
+					}
+					if (text.Contains("lamp"))
+					{
+						num2 -= 4;
+					}
+					if (text.Contains("see-through") || text.Contains("void"))
+					{
+						num2 -= 12;
+					}
+					if (num2 > num)
+					{
+						num = num2;
+						material = material2;
+					}
+				}
+			}
+		}
+		if (material != null && num > 0)
+		{
+			GlassTemplate = material;
+			MelonLogger.Msg("[L2A7V] glass material '" + material.name + "' / '" + material.shader.name + "' " + $"from the donor, queue {material.renderQueue}");
+		}
+		else
+		{
+			GlassTemplate = null;
+			MelonLogger.Warning("[L2A7V] the donor reported no glass material, the sight windows stay opaque");
+		}
+	}
 
-            var renderer = node.AddComponent<MeshRenderer>();
-            List<int> order;
-            if (GroupMaterials.TryGetValue(name, out order))
-            {
-                List<bool> thin;
-                if (!GroupThin.TryGetValue(name, out thin)) thin = new List<bool>();
-                var materials = new Material[order.Count];
-                for (int i = 0; i < order.Count; i++)
-                {
-                    materials[i] = LpAssets.GetMaterial(order[i], name, i < thin.Count && thin[i]);
-                    if (materials[i] == null)
-                        MelonLogger.Warning("[L2A7V] material unavailable for index " + order[i]);
-                }
-                renderer.sharedMaterials = materials;
-            }
-            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
-            renderer.receiveShadows = true;
-            renderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.BlendProbes;
-            renderer.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.BlendProbes;
-            return renderer;
-        }
+	private static void ApplyHeat(Assembly art)
+	{
+		if (LpConfig.AddHeatSource && !(art.Hull == null))
+		{
+			HeatSource heatSource = art.Hull.gameObject.AddComponent<HeatSource>();
+			if (HeatBackingField != null)
+			{
+				HeatBackingField.SetValue(heatSource, float.NaN);
+			}
+			heatSource.Heat = 0.85f;
+		}
+	}
 
-        /// <summary>
-        /// Clones the donor's painted vehicle material so the imported art inherits its shader, keywords,
-        /// render queue and layer in one step. Scored on the object path because the Leopard's paint is
-        /// spread over "LEO2_mesh/hull 2A0" and "turret A1" rather than one obvious shell.
-        ///
-        /// The re-capture test matters: GHPC unloads the bundle that holds GHPC/VehicleShader when a mission
-        /// ends, but our static template reference and our cached material clones survive it. A Material whose
-        /// shader was unloaded reports Hidden/InternalErrorShader and Unity draws it magenta, which is why a
-        /// second spawn in the same session used to turn the whole vehicle pink; so the cache is only trusted
-        /// while it still points at a live copy of that shader.
-        /// </summary>
-        private static bool CaptureTemplateMaterial(GameObject unitRoot)
-        {
-            if (TemplateMaterial != null && TemplateMaterial.shader != null &&
-                string.Equals(TemplateMaterial.shader.name, VehicleShaderName, StringComparison.Ordinal))
-                return true;
+	public static bool IsImportedArt(Transform transform)
+	{
+		Transform transform2 = transform;
+		int num = 0;
+		while (transform2 != null && num++ < 32)
+		{
+			if (transform2.name.StartsWith("L2A7V_", StringComparison.Ordinal))
+			{
+				return true;
+			}
+			transform2 = transform2.parent;
+		}
+		return false;
+	}
 
-            Renderer best = null;
-            Material bestMaterial = null;
-            int bestScore = int.MinValue;
+	private static string Describe(Transform bone)
+	{
+		Vector3 position = bone.position;
+		return $"{bone.name} at ({position.x:0.000},{position.y:0.000},{position.z:0.000}) scale {bone.lossyScale}";
+	}
 
-            foreach (Renderer renderer in unitRoot.GetComponentsInChildren<Renderer>(true))
-            {
-                if (IsImportedArt(renderer.transform)) continue;
-                Material material = null;
-                foreach (Material candidate in renderer.sharedMaterials)
-                {
-                    if (candidate != null && candidate.shader != null &&
-                        candidate.shader.name == VehicleShaderName)
-                    {
-                        material = candidate;
-                        break;
-                    }
-                }
-                if (material == null) continue;
+	private static string PathOf(Transform transform)
+	{
+		StringBuilder stringBuilder = new StringBuilder(transform.name);
+		Transform parent = transform.parent;
+		int num = 0;
+		while (parent != null && num++ < 24)
+		{
+			stringBuilder.Insert(0, parent.name + "/");
+			parent = parent.parent;
+		}
+		return stringBuilder.ToString();
+	}
 
-                string materialName = material.name.ToLowerInvariant();
-                string path = PathOf(renderer.transform).ToLowerInvariant();
-                int score = 1;
-                if (path.Contains("leo2_mesh")) score += 8;
-                if (materialName.StartsWith("leo2")) score += 4;
-                if (path.Contains("hull") || path.Contains("turret")) score += 2;
-                if (materialName.Contains("tricolour")) score += 1;
-                if (materialName.Contains("void") || materialName.Contains("see-through")) score -= 12;
-                if (path.Contains("interior") || path.Contains("collider") || path.Contains("hitzone")) score -= 10;
-                if (path.Contains("running gear") || path.Contains("track")) score -= 3;
-                if (score <= bestScore) continue;
-                bestScore = score;
-                best = renderer;
-                bestMaterial = material;
-            }
-
-            if (best == null)
-            {
-                Shader live = Shader.Find(VehicleShaderName);
-                if (live == null || TemplateMaterial == null)
-                {
-                    MelonLogger.Error("[L2A7V] could not find a live " + VehicleShaderName +
-                                      " to clone, so this spawn is left as the donor");
-                    return false;
-                }
-                TemplateMaterial.shader = live;
-                MelonLogger.Warning("[L2A7V] no donor renderer reported " + VehicleShaderName +
-                                    ", revived the cached template through Shader.Find");
-                return true;
-            }
-
-            TemplateMaterial = bestMaterial;
-            _visualLayer = best.gameObject.layer;
-            LpAssets.ConfigureFromTemplate(TemplateMaterial);
-            MelonLogger.Msg($"[L2A7V] shader template '{TemplateMaterial.name}' / " +
-                            $"'{TemplateMaterial.shader.name}' from {PathOf(best.transform)}, layer {_visualLayer}");
-            return true;
-        }
-
-        /// <summary>
-        /// Finds the donor's glazing each spawn. It has to be re-found rather than cached by reference for the
-        /// same reason the paint template does: the material lives in the vehicles bundle, which is released
-        /// when a mission ends, so after a reload the cached copy reports Hidden/InternalErrorShader.
-        /// </summary>
-        private static void CaptureGlassMaterial(GameObject unitRoot)
-        {
-            if (GlassTemplate != null && GlassTemplate.shader != null &&
-                GlassTemplate.shader.name == GlassShaderName)
-                return;
-
-            Material best = null;
-            int bestScore = int.MinValue;
-            foreach (Renderer renderer in unitRoot.GetComponentsInChildren<Renderer>(true))
-            {
-                if (IsImportedArt(renderer.transform)) continue;
-                foreach (Material candidate in renderer.sharedMaterials)
-                {
-                    if (candidate == null || candidate.shader == null) continue;
-                    string name = candidate.name.ToLowerInvariant();
-                    int score = 0;
-                    if (name.Contains("glass")) score += 6;
-                    if (name.Contains("fake glass")) score += 4;
-                    if (candidate.shader.name == GlassShaderName) score += 8;
-                    if (name.Contains("lamp")) score -= 4;
-                    if (name.Contains("see-through") || name.Contains("void")) score -= 12;
-                    if (score <= bestScore) continue;
-                    bestScore = score;
-                    best = candidate;
-                }
-            }
-
-            if (best != null && bestScore > 0)
-            {
-                GlassTemplate = best;
-                MelonLogger.Msg($"[L2A7V] glass material '{best.name}' / '{best.shader.name}' " +
-                                $"from the donor, queue {best.renderQueue}");
-                return;
-            }
-
-            GlassTemplate = null;
-            MelonLogger.Warning("[L2A7V] the donor reported no glass material, the sight windows stay opaque");
-        }
-
-        private static void ApplyHeat(Assembly art)
-        {
-            if (!LpConfig.AddHeatSource || art.Hull == null) return;
-            var source = art.Hull.gameObject.AddComponent<HeatSource>();
-            if (HeatBackingField != null) HeatBackingField.SetValue(source, float.NaN);
-            source.Heat = 0.85f;
-        }
-
-        /// <summary>True for the nodes this mod created, which the donor-visual pass must never touch.</summary>
-        public static bool IsImportedArt(Transform transform)
-        {
-            Transform node = transform;
-            int guard = 0;
-            while (node != null && guard++ < 32)
-            {
-                if (node.name.StartsWith("L2A7V_", StringComparison.Ordinal)) return true;
-                node = node.parent;
-            }
-            return false;
-        }
-
-        private static string Describe(Transform bone)
-        {
-            Vector3 p = bone.position;
-            return $"{bone.name} at ({p.x:0.000},{p.y:0.000},{p.z:0.000}) scale {bone.lossyScale}";
-        }
-
-        private static string PathOf(Transform transform)
-        {
-            var builder = new System.Text.StringBuilder(transform.name);
-            Transform parent = transform.parent;
-            int guard = 0;
-            while (parent != null && guard++ < 24)
-            {
-                builder.Insert(0, parent.name + "/");
-                parent = parent.parent;
-            }
-            return builder.ToString();
-        }
-
-        private static Transform FindDeep(Transform root, string name)
-        {
-            if (root.name == name) return root;
-            foreach (Transform child in root)
-            {
-                Transform found = FindDeep(child, name);
-                if (found != null) return found;
-            }
-            return null;
-        }
-    }
+	private static Transform FindDeep(Transform root, string name)
+	{
+		if (root.name == name)
+		{
+			return root;
+		}
+		foreach (Transform item in root)
+		{
+			Transform transform = FindDeep(item, name);
+			if (transform != null)
+			{
+				return transform;
+			}
+		}
+		return null;
+	}
 }

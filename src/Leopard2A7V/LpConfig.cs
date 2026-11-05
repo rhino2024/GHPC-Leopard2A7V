@@ -1,332 +1,202 @@
+using System.IO;
 using MelonLoader;
+using MelonLoader.Utils;
 using UnityEngine;
 
-namespace Leopard2A7V
+namespace Leopard2A7V;
+
+public static class LpConfig
 {
-    /// <summary>
-    /// What the player chooses is the paint scheme the vehicle wears, how much texture detail to load, and one
-    /// balance dial over the protection; everything else this vehicle needs is a measured fact about the
-    /// imported model - where its turret ring is, where the roof MG's muzzle is, how the paint maps are baked,
-    /// which of the donor's parts to keep - and those belong in the source beside the measurement that
-    /// produced them. A config file of thirty switches invites a stray edit that silently misaligns the art or
-    /// strips the interior, so only Skin, TextureResolution and ArmorCoefficient are written to
-    /// MelonPreferences and the rest are the values this vehicle is authored and tested at.
-    /// </summary>
-    public static class LpConfig
-    {
-        public static MelonPreferences_Category Category;
+	public static MelonPreferences_Category Category;
 
-        public static MelonPreferences_Entry<string> Skin;
+	public static MelonPreferences_Entry<string> Skin;
 
-        public static MelonPreferences_Entry<string> TextureResolution;
+	public static MelonPreferences_Entry<string> TextureResolution;
 
-        /// <summary>
-        /// Scale over every RHAe figure LpArmor writes, for players who want the vehicle softer or tougher than
-        /// the real-data table. 1 keeps the published protection; the value is clamped so a typo cannot make the
-        /// vehicle invulnerable or unarmoured.
-        /// </summary>
-        public static MelonPreferences_Entry<float> ArmorCoefficient;
+	public static MelonPreferences_Entry<float> ArmorCoefficient;
 
-        public static MelonPreferences_Entry<string> Ammo;
+	public static MelonPreferences_Entry<string> Ammo;
 
+	public const string UnitKey = "LEO2A7V";
 
-        public static float ArmorScale
-        {
-            get
-            {
-                float value = ArmorCoefficient == null ? 1f : ArmorCoefficient.Value;
-                if (float.IsNaN(value) || value <= 0f) return 1f;
-                return Mathf.Clamp(value, 0.3f, 3f);
-            }
-        }
+	public const string VisualRootName = "Leopard2A7V_Visual";
 
-        public const string UnitKey = "LEO2A7V";
-        public const string VisualRootName = "Leopard2A7V_Visual";
+	public const string FriendlyName = "Leopard 2A7V";
 
-        /// <summary>Name this vehicle shows in the menus.</summary>
-        public const string FriendlyName = "Leopard 2A7V";
+	public const string SourceUnitKey = "LEO2A3";
 
-        /// <summary>
-        /// The vanilla unit this vehicle is cloned from. Its prefab, rig, armour types and sight plumbing are
-        /// what the game authored against, and LEO2A3 is the only donor whose gunner daylight channel is a
-        /// periscope the 2A7V's own optic can be fitted into.
-        /// </summary>
-        public const string SourceUnitKey = "LEO2A3";
+	public static readonly bool UseTemplate = false;
 
-        /// <summary>
-        /// Spawn every vehicle by converting the game's own live LEO2A3 instead of instantiating a converted
-        /// prefab clone.
-        ///
-        /// This is the L2A7HU mod's arrangement, and it is on for the reason it works there: the conversion
-        /// needs things only a live unit has. Its armour colliders tell the added plates which layer the
-        /// projectile raycast actually looks at, and its crew, compartments and module hitzones are already in
-        /// the tree while the conversion runs. A prefab clone has none of that - it has never run Awake or
-        /// OnSpawn - so the same pass had to guess the layer and leave the damage model to be filled in later.
-        /// </summary>
-        public static readonly bool UseTemplate = false;
+	public static readonly bool ConvertSourceUnit = false;
 
-        /// <summary>
-        /// Off: only this mod's own entry is restyled and the stock LEO2A3s stay as the game made them, so a
-        /// scenario can field both.
-        /// </summary>
-        public static readonly bool ConvertSourceUnit = false;
+	public static readonly bool UseDonorRunningGear = true;
 
-        /// <summary>
-        /// On keeps the donor's skinned road wheels, idlers and sprockets instead of building this model's own
-        /// gear on the donor's suspension bones.
-        ///
-        /// The model's own wheels were the better geometry - they are the 2A7V's, drawn to the hull that is
-        /// drawn around them - but their unwrap is unusable at this texture budget: each wheel face is a
-        /// circular island a few dozen texels across in the 2K body atlas, so every triangle lands on one or
-        /// two texels of the albedo and normal map and the wheel renders as a checker of flat facets. That is
-        /// the "mosaic". The donor's wheels are properly unwrapped, animate on the same bones, and the tracks
-        /// beside them are the donor's already (UseDonorTrackArt), so the running gear now comes from one set.
-        /// </summary>
-        public static readonly bool UseDonorRunningGear = true;
+	public static readonly bool UseDonorTrackArt = true;
 
-        /// <summary>
-        /// On keeps the donor's track loops. The 2A7V's own exported loop is authored too short to reach
-        /// around its hull, so this is the only setting that shows a complete, rolling track.
-        /// </summary>
-        public static readonly bool UseDonorTrackArt = true;
+	public static readonly bool ShowInterior = false;
 
-        /// <summary>
-        /// Draw the crew compartment inside the hull from the War Thunder x-ray export (Interior.obj), hung on
-        /// the art's own pivots with the anchors the exterior groups use.
-        ///
-        /// Off: the x-ray view shows the GAME'S OWN compartment, crew figures and the damage states that come
-        /// with them, and nothing imported is drawn over it. That is also why the interior hider is not attached
-        /// - with the imported compartment gone, hiding the donor's would leave the report with an empty hull.
-        /// The x-ray export is still parsed, because the added armour arrays are read from it.
-        /// </summary>
-        public static readonly bool ShowInterior = false;
+	// Active damage model: data-defined L2A7V armour and Interior.obj modules.
+	// Legacy overlay / approximate retirement paths are retained only as source history.
+	public static readonly bool DataDrivenArchitecture = true;
+	public static readonly bool WtArmor = false;
 
-        /// <summary>
-        /// Set the protection from this model's geometry rather than the LEO2A3's: composite depths come from
-        /// that x-ray model's armour modules, scaled by the donor's own material factor. LpArmorLog reports
-        /// every layer at load.
-        /// </summary>
-        public static readonly bool WtArmor = true;
+	public static readonly bool OverlayArmor = true;
 
-        /// <summary>
-        /// Add the vehicle's own armour plates on top of the donor's, the way the Leopard 2A7HU mod does it,
-        /// instead of rewriting the donor's values and retiring the plates this mod thinks it covers. Off
-        /// leaves the LEO2A3's protection exactly as it shipped, which is what a plain model swap wants.
-        /// </summary>
-        public static readonly bool OverlayArmor = true;
+	public static readonly bool OverlayXrayArmor = true;
 
-        /// <summary>
-        /// Also collider in the x-ray arrays the visible applique does not stand for: mantlet block, turret
-        /// rear, hull deck, firewall and the spall liners.
-        /// </summary>
-        public static readonly bool OverlayXrayArmor = true;
+	public static readonly bool AddHeatSource = false;
 
-        /// <summary>
-        /// Attach a heat signature source to the imported visual. Off because the donor's own source stays on
-        /// the unit, and two of them read as a brighter target than the 2A7V is.
-        /// </summary>
-        public static readonly bool AddHeatSource = false;
+	public static readonly bool ReplaceDayReticle = true;
 
-        /// <summary>Draw the 2A7V's own graticule in the gunner's daylight sight instead of the donor's.</summary>
-        public static readonly bool ReplaceDayReticle = true;
+	public static readonly bool AddRoofGun = true;
 
-        /// <summary>
-        /// Make the roof MG a real weapon with its own mount, fire control and sight rather than decoration.
-        /// </summary>
-        public static readonly bool AddRoofGun = true;
+	public static readonly bool LimitMainGunElevation = true;
 
-        /// <summary>
-        /// Apply the gun arc below; this is the switch that actually stops the barrel. GHPC clamps with
-        /// AimablePlatform.LocalEulerLimits and treats x == y, a pair of zeros included, as unlimited travel,
-        /// so re-stating the arc is what guarantees the barrel cannot run past the mount.
-        /// </summary>
-        public static readonly bool LimitMainGunElevation = true;
+	public const float GunElevationDegrees = 20f;
 
-        /// <summary>Highest elevation above horizontal, in degrees - the 2A7V's arc as War Thunder models it.</summary>
-        public const float GunElevationDegrees = 20f;
+	public const float GunDepressionDegrees = -9f;
 
-        /// <summary>Lowest depression below horizontal, in degrees; negative.</summary>
-        public const float GunDepressionDegrees = -9f;
+	public const float RoofGunSightFov = 20f;
 
-        /// <summary>
-        /// Horizontal field of view of the roof MG sight, in degrees. The sight has no zoom, so this one figure
-        /// sets both the picture and how the graticule's width is scaled.
-        /// </summary>
-        public const float RoofGunSightFov = 20f;
+	public static readonly Vector2Int ThermalSize = new Vector2Int(1280, 640);
 
-        /// <summary>
-        /// The gunner thermal's render target size. FLIRCamera draws into a target of exactly this size and
-        /// stretches it over the screen, and the vertical field is derived from the target's aspect, so the
-        /// donor's 2:1 ratio is kept. The donor authors 480 x 240, which is coarse at full screen.
-        /// </summary>
-        public static readonly Vector2Int ThermalSize = new Vector2Int(1280, 640);
+	public const float TrackTreadsPerMetre = 0.746f;
 
-        /// <summary>
-        /// Tread repeats per metre for the model's own track sheet, which only matters while
-        /// UseDonorTrackArt is off: lp_track_uv.py reads the exported loop's v against forward as one period
-        /// per 0.746 m.
-        /// </summary>
-        public const float TrackTreadsPerMetre = 0.746f;
+	public const int AlbedoLuminance = 0;
 
-        /// <summary>
-        /// Largest texture loaded from disk. The 2K kit - what ships in textures/ - is 2048; the 4K kit in
-        /// textures_uhq/ is 4096 square, which is also Unity's ceiling here, so the switch is the kit and the cap
-        /// together. A 4K sheet is 64 MB decoded RGBA32 before mips, about sixteen times the 2K one's footprint,
-        /// which is why 2K stays the default.
-        /// </summary>
-        public static int MaxTextureSize => UhdTextures ? 4096 : 2048;
+	public const int PaintMaskLevel = 255;
 
-        /// <summary>
-        /// Target mean grey for the imported albedos. 0 keeps them as authored, which is right because
-        /// lp_texpass.py already re-centred them on the donor's own means during the conversion.
-        /// </summary>
-        public const int AlbedoLuminance = 0;
+	public const int SmoothnessLevel = 63;
 
-        /// <summary>Red channel of the neutral paint mask: 255 reads as fully painted, 0 as bare metal.</summary>
-        public const int PaintMaskLevel = 255;
+	public const bool NeutralMaps = true;
 
-        /// <summary>Base gloss for material groups that ship with no gloss bake; the donor's painted armour measures 94.</summary>
-        public const int SmoothnessLevel = 63;
+	public const bool UseDetailMaps = true;
 
-        /// <summary>
-        /// Use flat neutral mask and gloss maps rather than the donor's, which are UV-baked for its layout.
-        /// </summary>
-        public const bool NeutralMaps = true;
+	public static readonly Vector3 Offset = new Vector3(0f, 0f, 0.336f);
 
-        /// <summary>Bind the model's own ambient-occlusion bakes, which is what shades panel seams and hatches.</summary>
-        public const bool UseDetailMaps = true;
+	public static readonly Vector3 TurretAxis = new Vector3(0f, 1.62f, 0.403f);
 
-        /// <summary>Whole-vehicle placement of the art in the game's unit frame, measured against the donor's ground contact.</summary>
-        public static readonly Vector3 Offset = new Vector3(0f, 0f, 0.336f);
+	public static readonly Vector3 GunAxis = new Vector3(0.003f, 1.969f, 1.369f);
 
-        /// <summary>Turret traverse axis in model space, read from the model's bone table.</summary>
-        public static readonly Vector3 TurretAxis = new Vector3(0f, 1.620f, 0.403f);
+	public static readonly Vector3 CommanderView = Vector3.zero;
 
-        /// <summary>
-        /// Gun elevation axis in model space; its x is what keeps the mantlet sitting in the turret window.
-        /// </summary>
-        public static readonly Vector3 GunAxis = new Vector3(0.003f, 1.969f, 1.369f);
+	public static readonly Vector3 RoofGunYaw = new Vector3(-1.02f, 2.63f, -0.33f);
 
-        /// <summary>Unit frame nudge for the commander's camera, on top of the cupola point the slot is moved to.</summary>
-        public static readonly Vector3 CommanderView = Vector3.zero;
+	public static readonly Vector3 RoofGunTrunnion = new Vector3(-0.96f, 2.8f, -0.3f);
 
-        /// <summary>Model space traverse axis of the commander's machine gun mount, from the imported mg_aa_mount_h box.</summary>
-        public static readonly Vector3 RoofGunYaw = new Vector3(-1.02f, 2.63f, -0.33f);
+	public static readonly Vector3 RoofGunMuzzle = new Vector3(-0.91f, 2.85f, 0.52f);
 
-        /// <summary>Model space elevation axis of the commander's machine gun, on its bore line.</summary>
-        public static readonly Vector3 RoofGunTrunnion = new Vector3(-0.96f, 2.80f, -0.30f);
+	public static readonly Vector3 RoofGunSight = new Vector3(-0.9f, 2.92f, -0.6f);
 
-        /// <summary>Model space muzzle of the commander's machine gun, where rounds and the flash spawn.</summary>
-        public static readonly Vector3 RoofGunMuzzle = new Vector3(-0.91f, 2.85f, 0.52f);
+	public static readonly Vector3 RoofGunRackPoint = new Vector3(-1.05f, 2.83f, -0.25f);
 
-        /// <summary>Model space eyepiece of the commander's machine gun sight.</summary>
-        public static readonly Vector3 RoofGunSight = new Vector3(-0.90f, 2.92f, -0.60f);
+	public static float ArmorScale
+	{
+		get
+		{
+			float num = ((ArmorCoefficient == null) ? 1f : ArmorCoefficient.Value);
+			if (float.IsNaN(num) || num <= 0f)
+			{
+				return 1f;
+			}
+			return Mathf.Clamp(num, 0.3f, 3f);
+		}
+	}
 
-        /// <summary>Model space belt box of the commander's machine gun.</summary>
-        public static readonly Vector3 RoofGunRackPoint = new Vector3(-1.05f, 2.83f, -0.25f);
+	public static int MaxTextureSize
+	{
+		get
+		{
+			if (!UhdTextures)
+			{
+				return 2048;
+			}
+			return 4096;
+		}
+	}
 
-        /// <summary>
-        /// The x-ray export's frame against this game's. War Thunder's export is +X forward with +Z to
-        /// starboard; a GHPC unit is +Z forward with +X to starboard, which is the swap ObjModel and LpInterior
-        /// make when they read their OBJ files. Every centre, size or axis measured off the export has to go
-        /// through this before it is a position on the vehicle: left unswapped, an engine bay or an ammunition
-        /// rack comes out ninety degrees round and sits in the wrong compartment.
-        /// </summary>
-        public static Vector3 FromExport(Vector3 export)
-        {
-            return new Vector3(export.z, export.y, export.x);
-        }
+	public static string AssetDir => Path.Combine(MelonEnvironment.ModsDirectory, "Leopard2A7V");
 
-        public static string AssetDir =>
-            System.IO.Path.Combine(MelonLoader.Utils.MelonEnvironment.ModsDirectory, "Leopard2A7V");
+	public static string ResolutionName
+	{
+		get
+		{
+			string text = ((TextureResolution == null) ? null : TextureResolution.Value);
+			if (string.IsNullOrEmpty(text))
+			{
+				return "2k";
+			}
+			switch (text.Trim().ToLowerInvariant())
+			{
+			default:
+				return "2k";
+			case "4k":
+			case "uhq":
+			case "4096":
+				return "4k";
+			}
+		}
+	}
 
-        /// <summary>
-        /// "2k" or "4k", whatever the player typed: anything that is not plainly the 4K kit falls back to the 2K
-        /// one, so a typo costs detail instead of a magenta vehicle.
-        /// </summary>
-        public static string ResolutionName
-        {
-            get
-            {
-                string value = TextureResolution == null ? null : TextureResolution.Value;
-                if (string.IsNullOrEmpty(value)) return "2k";
-                value = value.Trim().ToLowerInvariant();
-                return value == "4k" || value == "uhq" || value == "4096" ? "4k" : "2k";
-            }
-        }
+	public static bool UhdTextures => ResolutionName == "4k";
 
-        /// <summary>True when the 4K kit under textures_uhq/ is the one to bind.</summary>
-        public static bool UhdTextures => ResolutionName == "4k";
+	public static bool CarriesDm73 => AmmoChoice == "dm73";
 
-        /// <summary>
-        /// Which long-rod the gun carries. Both are 800 mm rounds; DM73 leaves the barrel 30 m/s faster, so it
-        /// holds its penetration a little further out. Only one is carried at a time - the vehicle has one
-        /// APFSDS row and one HEAT row, and the HEAT round stays.
-        /// </summary>
-        public static bool CarriesDm73
-        {
-            get
-            {
-                return AmmoChoice == "dm73";
-            }
-        }
+	internal static string AmmoChoice => NormalisedChoice(Ammo, "dm73", "dm53", "dm73");
 
-        /// <summary>
-        /// The entry as one of a fixed list, so a hand-edited config cannot put the mod into a state it has no
-        /// code for: anything unrecognised falls back to the default instead of silently doing nothing.
-        /// </summary>
-        internal static string NormalisedChoice(MelonPreferences_Entry<string> entry, string fallback,
-            params string[] allowed)
-        {
-            string value = entry == null ? null : (entry.Value ?? string.Empty).Trim().ToLowerInvariant();
-            if (string.IsNullOrEmpty(value)) return fallback;
-            foreach (string option in allowed)
-                if (value == option) return option;
-            return fallback;
-        }
+	public static string SkinName
+	{
+		get
+		{
+			string text = ((Skin == null) ? null : Skin.Value);
+			if (string.IsNullOrEmpty(text))
+			{
+				return string.Empty;
+			}
+			text = text.Trim().ToLowerInvariant();
+			switch (text)
+			{
+			case "factory":
+			case "default":
+			case "none":
+			case "stock":
+			case "bronzegruen":
+				return string.Empty;
+			default:
+				return text;
+			}
+		}
+	}
 
-        /// <summary>Which long-rod is carried, normalised to "dm53" or "dm73".</summary>
-        internal static string AmmoChoice => NormalisedChoice(Ammo, "dm73", "dm53", "dm73");
+	public static Vector3 FromExport(Vector3 export)
+	{
+		return new Vector3(export.z, export.y, export.x);
+	}
 
+	internal static string NormalisedChoice(MelonPreferences_Entry<string> entry, string fallback, params string[] allowed)
+	{
+		string text = ((entry == null) ? null : (entry.Value ?? string.Empty).Trim().ToLowerInvariant());
+		if (string.IsNullOrEmpty(text))
+		{
+			return fallback;
+		}
+		foreach (string text2 in allowed)
+		{
+			if (text == text2)
+			{
+				return text2;
+			}
+		}
+		return fallback;
+	}
 
-        public static void Create()
-        {
-            Category = MelonPreferences.CreateCategory("Leopard2A7V", "Leopard 2A7V tank model swap");
-
-            // G collides with smoke and T is the game's own polarity key, so the channel key is a setting.
-
-            Skin = Category.CreateEntry("Skin", "",
-                "Paint scheme: factory, nato, desert, winter, parade");
-
-            TextureResolution = Category.CreateEntry("TextureResolution", "2k",
-                "Texture detail: 2k or 4k. 4k is sharper up close but needs far more video memory and load time");
-
-            ArmorCoefficient = Category.CreateEntry("ArmorCoefficient", 1.0f,
-                "Armour strength multiplier over every zone (1 = real-data protection, 0.3-3)");
-
-            Ammo = Category.CreateEntry("Ammo", "dm73",
-                "APFSDS round: dm53 (1750 m/s) or dm73 (1780 m/s)");
-
-            MelonPreferences.Save();
-        }
-
-        /// <summary>
-        /// Selected paint scheme as a folder name, or empty for the factory scheme. The manager offers the schemes
-        /// as a list, so "factory" is accepted as the word for "no scheme folder" rather than making the player
-        /// leave the field empty.
-        /// </summary>
-        public static string SkinName
-        {
-            get
-            {
-                string value = Skin == null ? null : Skin.Value;
-                if (string.IsNullOrEmpty(value)) return string.Empty;
-                value = value.Trim().ToLowerInvariant();
-                if (value == "factory" || value == "default" || value == "none" || value == "stock" ||
-                    value == "bronzegruen")
-                    return string.Empty;
-                return value;
-            }
-        }
-    }
+	public static void Create()
+	{
+		Category = MelonPreferences.CreateCategory("Leopard2A7V", "Leopard 2A7V tank model swap");
+		Skin = Category.CreateEntry("Skin", "", "Paint scheme: factory, nato, desert, winter, parade");
+		TextureResolution = Category.CreateEntry("TextureResolution", "2k", "Texture detail: 2k or 4k. 4k is sharper up close but needs far more video memory and load time");
+		ArmorCoefficient = Category.CreateEntry("ArmorCoefficient", 1f, "Armour strength multiplier over the L2A7V candidate values (1 = unvalidated authoring baseline, 0.3-3; not measured real-world protection)");
+		Ammo = Category.CreateEntry("Ammo", "dm73", "APFSDS round: dm53 (1750 m/s) or dm73 (1780 m/s)");
+		MelonPreferences.Save();
+	}
 }

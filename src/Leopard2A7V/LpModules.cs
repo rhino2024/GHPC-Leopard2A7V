@@ -1,133 +1,145 @@
-using System.Collections.Generic;
-using GHPC;
-using GHPC.Equipment;
+using System;
+using System.Reflection;
 using GHPC.Vehicle;
 using MelonLoader;
 using UnityEngine;
 
-namespace Leopard2A7V
+namespace Leopard2A7V;
+
+public static class LpModules
 {
-    /// <summary>
-    /// Moves the vehicle's internals onto the 2A7V's own layout.
-    ///
-    /// The donor's engine, transmission and radiator hit zones sit where a LEO2A3's do. The 2A7V has a longer
-    /// hull and a different powerpack position, so a round entering the engine deck was passing through the
-    /// old boxes - or missing them entirely - and the modules took no damage. The centres come from the
-    /// vehicle's x-ray export, which is the same source the armour is built from:
-    ///
-    ///   engine_xray        (-2.331, 1.093, -0.014)  size (2.838, 1.036, 2.079)
-    ///   transmission_xray  (-3.099, 0.949, -0.027)  size (0.894, 0.738, 1.551)
-    ///   radiator_xray      (-3.171, 1.506,  0.000)  size (1.014, 0.309, 2.027)
-    /// </summary>
-    public static class LpModules
-    {
-        private const string Tag = "[L2A7V][modules]";
+	private struct Target
+	{
+		internal string Field;
 
-        private struct Target
-        {
-            internal string Field;
-            internal Vector3 Centre;
-            internal Vector3 Size;
-        }
+		internal Vector3 Centre;
 
-        private static readonly Target[] Targets =
-        {
-            new Target { Field = "EngineHitZone", Centre = new Vector3(-2.331f, 1.093f, -0.014f), Size = new Vector3(2.838f, 1.036f, 2.079f) },
-            new Target { Field = "TransmissionHitZone", Centre = new Vector3(-3.099f, 0.949f, -0.027f), Size = new Vector3(0.894f, 0.738f, 1.551f) },
-            new Target { Field = "RadiatorHitZone", Centre = new Vector3(-3.171f, 1.506f, 0.0f), Size = new Vector3(1.014f, 0.309f, 2.027f) },
-        };
+		internal Vector3 Size;
+	}
 
-        public static void Apply(GameObject unitRoot)
-        {
-            if (unitRoot == null) return;
-            ChassisDamageManager chassis = unitRoot.GetComponentInChildren<ChassisDamageManager>(true);
-            if (chassis == null)
-            {
-                MelonLogger.Msg(Tag + " no ChassisDamageManager on " + unitRoot.name + "; hit zones left where the donor put them");
-                return;
-            }
+	private const string Tag = "[L2A7V][modules]";
 
-            Transform space = Space(unitRoot);
-            if (space == null) return;
+	private static readonly Target[] Targets = new Target[3]
+	{
+		new Target
+		{
+			Field = "EngineHitZone",
+			Centre = new Vector3(-2.331f, 1.093f, -0.014f),
+			Size = new Vector3(2.838f, 1.036f, 2.079f)
+		},
+		new Target
+		{
+			Field = "TransmissionHitZone",
+			Centre = new Vector3(-3.099f, 0.949f, -0.027f),
+			Size = new Vector3(0.894f, 0.738f, 1.551f)
+		},
+		new Target
+		{
+			Field = "RadiatorHitZone",
+			Centre = new Vector3(-3.171f, 1.506f, 0f),
+			Size = new Vector3(1.014f, 0.309f, 2.027f)
+		}
+	};
 
-            int moved = 0;
-            foreach (Target target in Targets)
-            {
-                DestructibleComponent zone = Field(chassis, target.Field);
-                if (zone == null) continue;
-                if (!Move(space, zone, target)) continue;
-                moved++;
-            }
+	public static void Apply(GameObject unitRoot)
+	{
+		if (unitRoot == null)
+		{
+			return;
+		}
+		ChassisDamageManager componentInChildren = unitRoot.GetComponentInChildren<ChassisDamageManager>(includeInactive: true);
+		if (componentInChildren == null)
+		{
+			MelonLogger.Msg("[L2A7V][modules] no ChassisDamageManager on " + unitRoot.name + "; hit zones left where the donor put them");
+			return;
+		}
+		Transform transform = Space(unitRoot);
+		if (transform == null)
+		{
+			return;
+		}
+		int num = 0;
+		Target[] targets = Targets;
+		for (int i = 0; i < targets.Length; i++)
+		{
+			Target target = targets[i];
+			DestructibleComponent destructibleComponent = Field(componentInChildren, target.Field);
+			if (!(destructibleComponent == null) && Move(transform, destructibleComponent, target))
+			{
+				num++;
+			}
+		}
+		MelonLogger.Msg("[L2A7V][modules] moved " + num + " of " + Targets.Length + " hit zone(s) onto the 2A7V layout");
+	}
 
-            MelonLogger.Msg(Tag + " moved " + moved + " of " + Targets.Length + " hit zone(s) onto the 2A7V layout");
-        }
+	private static bool Move(Transform space, DestructibleComponent zone, Target target)
+	{
+		Transform transform = zone.transform;
+		Vector3 vector = LpConfig.FromExport(target.Centre);
+		Vector3 vector2 = LpConfig.FromExport(target.Size);
+		if ((space.InverseTransformPoint(transform.position) - vector).magnitude < 0.05f)
+		{
+			return false;
+		}
+		if (transform.GetComponentInChildren<Renderer>(includeInactive: true) != null)
+		{
+			BoxCollider boxCollider = transform.GetComponent<BoxCollider>();
+			if (boxCollider == null)
+			{
+				Collider[] components = transform.GetComponents<Collider>();
+				for (int i = 0; i < components.Length; i++)
+				{
+					components[i].enabled = false;
+				}
+				boxCollider = transform.gameObject.AddComponent<BoxCollider>();
+			}
+			boxCollider.center = transform.InverseTransformPoint(space.TransformPoint(vector));
+			Vector3 vector3 = transform.InverseTransformVector(space.TransformVector(vector2));
+			boxCollider.size = new Vector3(Mathf.Abs(vector3.x), Mathf.Abs(vector3.y), Mathf.Abs(vector3.z));
+			boxCollider.isTrigger = false;
+			boxCollider.enabled = true;
+			MelonLogger.Msg("[L2A7V][modules] moved the collider of '" + transform.name + "' (kept its art in place)");
+			return true;
+		}
+		transform.position = space.TransformPoint(vector);
+		Vector3 vector4 = space.TransformVector(vector2);
+		vector4 = new Vector3(Mathf.Abs(vector4.x), Mathf.Abs(vector4.y), Mathf.Abs(vector4.z));
+		BoxCollider boxCollider2 = transform.GetComponent<BoxCollider>();
+		if (boxCollider2 == null)
+		{
+			Collider[] components = transform.GetComponents<Collider>();
+			for (int i = 0; i < components.Length; i++)
+			{
+				components[i].enabled = false;
+			}
+			boxCollider2 = transform.gameObject.AddComponent<BoxCollider>();
+		}
+		boxCollider2.size = vector4;
+		boxCollider2.isTrigger = false;
+		boxCollider2.enabled = true;
+		return true;
+	}
 
-        private static bool Move(Transform space, DestructibleComponent zone, Target target)
-        {
-            Transform node = zone.transform;
+	private static DestructibleComponent Field(ChassisDamageManager chassis, string name)
+	{
+		FieldInfo field = typeof(ChassisDamageManager).GetField(name);
+		if (!(field == null))
+		{
+			return field.GetValue(chassis) as DestructibleComponent;
+		}
+		return null;
+	}
 
-            // The targets are read off the x-ray export, which is +X forward; the rig is +Z forward.
-            Vector3 centre = LpConfig.FromExport(target.Centre);
-            Vector3 size = LpConfig.FromExport(target.Size);
-
-            Vector3 current = space.InverseTransformPoint(node.position);
-            float drift = (current - centre).magnitude;
-            if (drift < 0.05f) return false;
-
-            // If the zone draws anything, move its collider instead of its transform: dragging the transform
-            // would drag the artwork with it. This is why the zones were not moving at all before - the guard
-            // simply returned and the modules stayed on the donor's layout.
-            if (node.GetComponentInChildren<Renderer>(true) != null)
-            {
-                BoxCollider zoneBox = node.GetComponent<BoxCollider>();
-                if (zoneBox == null)
-                {
-                    // The donor zones are capsules as often as boxes; replacing the shape is fine, the zone is
-                    // a bare trigger either way.
-                    foreach (Collider extra in node.GetComponents<Collider>()) extra.enabled = false;
-                    zoneBox = node.gameObject.AddComponent<BoxCollider>();
-                }
-                zoneBox.center = node.InverseTransformPoint(space.TransformPoint(centre));
-                Vector3 sizeLocal = node.InverseTransformVector(space.TransformVector(size));
-                zoneBox.size = new Vector3(Mathf.Abs(sizeLocal.x), Mathf.Abs(sizeLocal.y), Mathf.Abs(sizeLocal.z));
-                zoneBox.isTrigger = false;
-                zoneBox.enabled = true;
-                MelonLogger.Msg(Tag + " moved the collider of '" + node.name + "' (kept its art in place)");
-                return true;
-            }
-
-            // Put the hit zone's transform where the export says the module is, and give its collider the
-            // module's own size. A box is used even where the donor had a capsule: the export only measures a
-            // bounding box, and a box at the right place is worth more than a capsule at the wrong one.
-            node.position = space.TransformPoint(centre);
-            Vector3 worldSize = space.TransformVector(size);
-            worldSize = new Vector3(Mathf.Abs(worldSize.x), Mathf.Abs(worldSize.y), Mathf.Abs(worldSize.z));
-
-            BoxCollider box = node.GetComponent<BoxCollider>();
-            if (box == null)
-            {
-                foreach (Collider extra in node.GetComponents<Collider>()) extra.enabled = false;
-                box = node.gameObject.AddComponent<BoxCollider>();
-            }
-            box.size = worldSize;
-            box.isTrigger = false;
-            box.enabled = true;
-            return true;
-        }
-
-        private static DestructibleComponent Field(ChassisDamageManager chassis, string name)
-        {
-            var field = typeof(ChassisDamageManager).GetField(name);
-            return field == null ? null : field.GetValue(chassis) as DestructibleComponent;
-        }
-
-        /// <summary>The rig root: the transform whose space the x-ray export is expressed in.</summary>
-        private static Transform Space(GameObject unitRoot)
-        {
-            foreach (Transform node in unitRoot.GetComponentsInChildren<Transform>(true))
-                if (node != null && node.name.Equals("leo2_rig", System.StringComparison.OrdinalIgnoreCase))
-                    return node;
-            return unitRoot.transform;
-        }
-    }
+	private static Transform Space(GameObject unitRoot)
+	{
+		Transform[] componentsInChildren = unitRoot.GetComponentsInChildren<Transform>(includeInactive: true);
+		foreach (Transform transform in componentsInChildren)
+		{
+			if (transform != null && transform.name.Equals("leo2_rig", StringComparison.OrdinalIgnoreCase))
+			{
+				return transform;
+			}
+		}
+		return unitRoot.transform;
+	}
 }
