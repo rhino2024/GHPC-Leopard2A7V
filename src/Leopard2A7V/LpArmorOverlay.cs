@@ -151,19 +151,32 @@ namespace Leopard2A7V
                 Vector3 anchor = zone.OnTurret ? LpConfig.TurretAxis : Vector3.zero;
                 Vector3 localPosition = zone.OnTurret ? Vector3.zero : hullLocal;
                 var wanted = new HashSet<string>(zone.Parts, StringComparer.OrdinalIgnoreCase);
+                var perName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
                 int pieces = 0;
                 Vector3 sample = Vector3.zero;
 
                 foreach (ObjGeometry geometry in ObjModel.Geometries)
                 {
                     if (!wanted.Contains(geometry.ObjectName)) continue;
-                    Mesh mesh = Cached(geometry.ObjectName, geometry, anchor);
+
+                    // The cache key carries the material index, not just the object name. The export splits a
+                    // multi-material object into one geometry per material (ObjModel.EnsureActive), so a plate
+                    // skinned in two materials arrives as two entries with the same name. Keying on the name
+                    // alone handed the second entry the first one's mesh, and the zone then spawned a second
+                    // collider of exactly the same shape at exactly the same place - a plate worth twice its
+                    // number. With the material in the key each entry gets its own piece of the plate, so the
+                    // two pieces together cover it once.
+                    Mesh mesh = Cached(geometry.ObjectName + "#" + geometry.MaterialIndex, geometry, anchor);
                     if (mesh == null) continue;
 
                     GameObject piece = Spawn(zone.Name, zone.Ke * scale, zone.Ce * scale, bone, localPosition,
                         mesh, layer, unit);
                     if (pieces == 0 && piece != null) sample = piece.transform.position;
                     pieces++;
+
+                    int seen;
+                    perName.TryGetValue(geometry.ObjectName, out seen);
+                    perName[geometry.ObjectName] = seen + 1;
                 }
 
                 if (pieces == 0)
@@ -173,9 +186,19 @@ namespace Leopard2A7V
                 }
                 built += pieces;
                 if (talk)
+                {
+                    var split = new List<string>();
+                    foreach (KeyValuePair<string, int> entry in perName)
+                        if (entry.Value > 1) split.Add(entry.Key + " x" + entry.Value);
+
                     MelonLogger.Msg(Tag + " '" + zone.Name + "': " + pieces + " plate collider(s), " +
                                     (zone.Ke * scale).ToString("0") + "/" + (zone.Ce * scale).ToString("0") +
-                                    " mm KE/CE, first at world " + sample.ToString("0.0"));
+                                    " mm KE/CE, first at world " + sample.ToString("0.0") +
+                                    (split.Count == 0
+                                        ? string.Empty
+                                        : " (split across materials, one piece each: " +
+                                          string.Join(", ", split) + ")"));
+                }
             }
             return built;
         }
