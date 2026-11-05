@@ -8,8 +8,9 @@ using MelonLoader;
 
 namespace Leopard2A7V;
 
-// L2A7V values and source meshes. Only the data-driven architecture is shared
-// with T90M; no T90M protection values, geometry or material parameters are used.
+// L2A7V values and source meshes. The data-driven schema is this mod's own
+// design; no external mod's protection values, geometry or material
+// parameters are used.
 public sealed class LpArmourSpec
 {
     public sealed class Entry
@@ -26,6 +27,11 @@ public sealed class LpArmourSpec
         public string Source;
         public bool Convex => Mode == "composite";
         public bool Drawn => Mode == "drawn";
+        public bool Edit => Mode == "edit";
+        public bool Slab => Mode == "slab";
+        // Edit and slab entries drive an existing donor piece instead of
+        // spawning baked geometry, so they never need a Meshes lookup.
+        public bool NeedsGeometry => !Drawn && !Edit && !Slab;
     }
 
     public readonly List<Entry> Entries = new List<Entry>();
@@ -35,9 +41,9 @@ public sealed class LpArmourSpec
     {
         if (_cached != null) return _cached;
         LpArmourSpec result = new LpArmourSpec();
-        using (Stream stream = typeof(LpArmourSpec).Assembly.GetManifestResourceStream("armour_t90m_style.tsv"))
+        using (Stream stream = typeof(LpArmourSpec).Assembly.GetManifestResourceStream("armour_l2a7v.tsv"))
         {
-            if (stream == null) throw new InvalidDataException("embedded armour_t90m_style.tsv is missing");
+            if (stream == null) throw new InvalidDataException("embedded armour_l2a7v.tsv is missing");
             using (StreamReader reader = new StreamReader(stream, Encoding.UTF8))
             {
                 string line;
@@ -55,8 +61,12 @@ public sealed class LpArmourSpec
                         Ke = Number(f[3]), Ce = Number(f[4]), AngleMatters = f[5].Trim() == "1",
                         Material = Clean(f[6]), Replace = Clean(f[7]), Name = Clean(f[8]), Source = Clean(f[9])
                     };
-                    if (e.Piece.Length == 0 || (e.Mode != "uniform" && e.Mode != "composite" && e.Mode != "drawn"))
+                    if (e.Piece.Length == 0 || (e.Mode != "uniform" && e.Mode != "composite" && e.Mode != "drawn"
+                        && e.Mode != "edit" && e.Mode != "slab"))
                         throw new FormatException("invalid armour table line " + number);
+                    // Edit/slab drive an existing donor piece by exact name.
+                    if ((e.Edit || e.Slab) && (e.Replace.Length == 0 || e.Replace == "-"))
+                        throw new FormatException("armour table line " + number + ": " + e.Mode + " needs an exact donor replacement name");
                     if (!e.Drawn && (e.Ke < 0f || e.Ce < 0f)) throw new FormatException("negative protection on line " + number);
                     result.Entries.Add(e);
                 }

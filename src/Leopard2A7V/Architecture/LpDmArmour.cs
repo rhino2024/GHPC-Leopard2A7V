@@ -8,7 +8,7 @@ using MelonLoader;
 
 namespace Leopard2A7V.Architecture;
 
-// The schema follows T90M's data-driven damage model, but all values and
+// The schema is this mod's own data-driven damage model; all values and
 // geometry below belong to the Leopard 2A7V. No T90 protection is imported.
 internal sealed class LpDmArmour
 {

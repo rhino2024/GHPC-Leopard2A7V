@@ -2,7 +2,20 @@
 
 ## 0.3.2
 
-**独立版：装甲与内构照 T-90M 的架构重建，替换旧的叠加路径。** 只借架构，不复制 T-90M 的数值与坐标。
+**发布版：独立架构 + 数据模型命名独立 + 供体全量替换。** 相对 0.3.2-rc1（早期独立版构建，未随 release 发布）的 35 条表，本版把能替换的供体件都替换了，并且不再借用 T-90M 的命名。
+
+- **改名**：`armour_t90m_style.tsv` → `armour_l2a7v.tsv`，`modules_t90m_style.json` → `modules_l2a7v.json`；源码注释与版本号去掉 t90m 字样。全 DLL 字符串扫描 0 处 `T90M`/`t90m`。
+  - 澄清：3D 外观、X 光内构、装甲网格本来就是 L2A7V 自有资产，从未借用 T-90M 模型；唯一借的是数据表命名。
+- **装甲覆盖 16→34 种、命中区 12→15 类**，表里新增两种模式：
+  - `edit`：保留供体几何与碰撞体，只改写供体 `UniformArmor` 的公开 RHA 字段（11 行：尾甲、动力舱顶、甲板翼、炮塔顶前/中、炮塔底、尾内壁、驻退机 ×3）。
+  - `slab`：供体是网格厚度驱动的 `VariableArmor`（值无法改写）时，在供体碰撞体包围盒上生成自有凸板并退役供体（7 行：车体左右侧上/下、首下两侧阵、前部左右阵）。
+  - 明确保留：履带/负重轮/平衡肘、乘员 hitzone、舱盖/座椅/操纵盒/潜望镜、`front left/right plate`（层级归属存疑）、`gun mount/gun rotor/mantlet recess`（曲面，slab 近似会失真）。
+- **内构 19→22 个模块**：新增 `fuel_pumps`、`hull_hydraulics`、`coax_mg_ammo`（盒体取自供体网格 AABB 加余量），均 `report_only`——无已知原生效果可接线，毁伤只体现在 X 光与状态文本。
+- **第二轮代码审查修复**：收养路径重复登记 `childColliders`（`LpModuleZone.Registered` 保证只登记一次）、`LpMiniJson` 缺 `health`/`threshold` 时 NaN 绕过校验、装甲网格缓存键 `Matrix4x4.ToString()` 精度不足、全部模块构建失败时 `Wire` 空转 90 秒、供体退役逐表项重复扫描。
+
+## 0.3.2-rc1（未随 release 发布）
+
+**早期独立版：装甲与内构照 T-90M 的架构重建，替换旧的叠加路径。** 只借架构，不复制 T-90M 的数值与坐标。
 
 - **装甲改为数据驱动**：`armour_t90m_style.tsv` 35 条 L2A7V 自己的配置（外部炮塔模块、首上、内部复合、隔板、衬层）。`LpArmourBuilder` 读嵌入的 `armor.bin` 与 `Leopard2A7V.obj` 的真实网格，按模式生成 MeshCollider + UniformArmor + AAR，注册进原生碰撞组，再按**精确名称**退役供体装甲。
   - 每辆车严格车体作用域 + 一次扫描缓存：旧版 `RootOf` 会爬到场景根，两辆同场时第二辆会认走第一辆的装甲件却退役自己的供体装甲（防护归零），同时 35 次/车全场景扫描放大多车掉帧。

@@ -103,6 +103,26 @@
       "id": "commander_optics", "kind": "report_only", "name": "2A7V commander panoramic sight", "group": "Turret",
       "parts": ["commander_panoramic_sight_xray"], "health": 60, "threshold": 15, "pressure": 0.5,
       "replaces": [], "hooks": [], "status": "Commander panoramic sight damaged (CITV linkage pending validation)"
+    },
+    {
+      "id": "fuel_pumps", "kind": "report_only", "name": "2A7V fuel pumps", "group": "Hull",
+      "boxes": [
+        {"c": [-0.667, 1.128, -0.778], "s": [0.470, 0.250, 0.230]},
+        {"c": [-0.569, 1.128, 0.778], "s": [0.470, 0.315, 0.230]}
+      ], "health": 40, "threshold": 10, "pressure": 0.5,
+      "replaces": ["fuel pump"], "hooks": [], "status": "Fuel pump destroyed (no native effect wired)"
+    },
+    {
+      "id": "hull_hydraulics", "kind": "report_only", "name": "2A7V hull hydraulic pump", "group": "Hull",
+      "boxes": [{"c": [0.242, 1.042, 0.922], "s": [0.290, 0.150, 0.150]}],
+      "health": 40, "threshold": 10, "pressure": 0.5,
+      "replaces": ["hydraulics"], "hooks": [], "status": "Hull hydraulic pump destroyed (no native effect wired)"
+    },
+    {
+      "id": "coax_mg_ammo", "kind": "report_only", "name": "2A7V coax MG ammunition", "group": "Turret",
+      "boxes": [{"c": [1.299, 1.885, -0.630], "s": [0.110, 0.210, 0.280]}],
+      "health": 30, "threshold": 8, "pressure": 0.5,
+      "replaces": ["machine gun ammo box"], "hooks": [], "status": "Coaxial MG ammunition destroyed (no native effect wired)"
     }
   ]
 }

@@ -29,7 +29,7 @@ public sealed class LpModuleZone : MonoBehaviour
     public bool Registered;
 }
 
-// T90M-style data-driven compartments for the L2A7V: Build() creates the
+// Data-driven compartments for the L2A7V: Build() creates the
 // Interior.obj / authored-box damage zones, Wire() waits for the donor
 // systems, then swaps the named donor hit zones for the new ones and hooks
 // the native damage / repair events. Both stages are bounded by LpLateInit

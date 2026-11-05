@@ -7,7 +7,7 @@ using UnityEngine;
 
 namespace Leopard2A7V;
 
-// Data model for modules_t90m_style.json. The file is an authored L2A7V
+// Data model for modules_l2a7v.json. The file is an authored L2A7V
 // table: coordinates marked in the file are leo2_rig export space and are
 // converted exactly once by the builder; Interior.obj part vertices are
 // already in leo2_rig Unity space and are never re-converted here.
@@ -46,7 +46,7 @@ public sealed class LpModuleSpec
         public string Rack;
     }
 
-    private const string Resource = "modules_t90m_style.json";
+    private const string Resource = "modules_l2a7v.json";
 
     public readonly List<Module> Modules = new List<Module>();
 

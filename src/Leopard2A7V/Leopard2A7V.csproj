@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net472</TargetFramework>
@@ -91,11 +91,11 @@
     <EmbeddedResource Include="Assets\armor.bin">
       <LogicalName>armor.bin</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="armour_t90m_style.tsv">
-      <LogicalName>armour_t90m_style.tsv</LogicalName>
+    <EmbeddedResource Include="armour_l2a7v.tsv">
+      <LogicalName>armour_l2a7v.tsv</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="modules_t90m_style.json">
-      <LogicalName>modules_t90m_style.json</LogicalName>
+    <EmbeddedResource Include="modules_l2a7v.json">
+      <LogicalName>modules_l2a7v.json</LogicalName>
     </EmbeddedResource>
     <!-- Retained in source history only; the native PlayerInput path replaces it. -->
     <Compile Remove="LpSmokeWiring.cs" />

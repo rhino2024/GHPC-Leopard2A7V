@@ -1,5 +1,5 @@
 ﻿# Piece|Group|Mode|KE mm RHA|CE mm RHA|AngleMatters|Material|Exact donor replacement|Display name|Source
-# These are inherited L2A7V authoring assumptions, not T90M data or measured real-world equivalence.
+# These are L2A7V-authored values: inherited authoring assumptions, not measured real-world equivalence.
 # Source Geometry comes from Leopard2A7V.obj; Source Xray uses the original export space and is converted once.
 ex_armor_l_17|Turret|uniform|880|1500|1|turret front array|-|L2A7V turret front module left|Geometry; retained L2A7V values
 ex_armor_r_17|Turret|uniform|880|1500|1|turret front array|-|L2A7V turret front module right|Geometry; retained L2A7V values
@@ -37,3 +37,23 @@ spall_liner_06_xray|Hull|drawn|0|0|0|liner|-|L2A7V hull liner left|Xray visual; 
 spall_liner_07_xray|Hull|drawn|0|0|0|liner|-|L2A7V hull liner right|Xray visual; no artificial stacked RHA
 spall_liner_08_xray|Hull|drawn|0|0|0|liner|-|L2A7V hull forward liner|Xray visual; no artificial stacked RHA
 spall_liner_09_xray|Hull|drawn|0|0|0|liner|-|L2A7V driver liner|Xray visual; no artificial stacked RHA
+# --- donor_edit rows: donor geometry/collider kept, values table-driven (2026-11-05 full-coverage pass) ---
+edit_hull_rear|Hull|edit|20|30|1|armour steel|hull rear|L2A7V hull rear plate|Donor edit; vanilla 15/15, L2A7V authoring
+edit_engine_deck|Hull|edit|15|20|1|armour steel|engine deck|L2A7V engine deck|Donor edit; vanilla 15/15, L2A7V authoring
+edit_sponson_left|Hull|edit|20|30|1|armour steel|sponson left|L2A7V left sponson floor|Donor edit; vanilla 20/20, CE raised
+edit_sponson_right|Hull|edit|20|30|1|armour steel|sponson right|L2A7V right sponson floor|Donor edit; vanilla 20/20, CE raised
+edit_turret_roof_front|Turret|edit|60|80|1|armour steel|turret roof front|L2A7V turret roof front|Donor edit; vanilla 40/40, L2A7V authoring
+edit_turret_roof_mid|Turret|edit|40|60|1|armour steel|turret roof mid|L2A7V turret roof mid|Donor edit; vanilla 20/20, L2A7V authoring
+edit_turret_bottom|Turret|edit|20|30|1|armour steel|turret bottom|L2A7V turret bottom|Donor edit; vanilla 14/14, L2A7V authoring
+edit_turret_rear_inner|Turret|edit|250|400|1|armour steel|turret rear right inner|L2A7V turret rear inner wall|Donor edit; vanilla 20/20, matches bustle values
+edit_recuperator_1|Turret|edit|30|50|0|armour steel|recuperator 1|L2A7V recuperator guard 1|Donor edit; vanilla 5/5, angle rule kept
+edit_recuperator_2|Turret|edit|30|50|0|armour steel|recuperator 2|L2A7V recuperator guard 2|Donor edit; vanilla 5/5, angle rule kept
+edit_recuperator_3|Turret|edit|30|50|0|armour steel|recuperator 3|L2A7V recuperator guard 3|Donor edit; vanilla 5/5, angle rule kept
+# --- donor slab rows: own convex slab over donor collider bounds, donor retired (mesh-thickness VariableArmor) ---
+slab_hull_side_left_upper|Hull|slab|30|50|1|armour steel|hull left upper|L2A7V hull side left upper|Slab over donor bounds; vanilla mesh-thickness steel
+slab_hull_side_left_lower|Hull|slab|30|50|1|armour steel|hull left lower|L2A7V hull side left lower|Slab over donor bounds; vanilla mesh-thickness steel
+slab_hull_side_right_upper|Hull|slab|30|50|1|armour steel|hull right upper|L2A7V hull side right upper|Slab over donor bounds; vanilla mesh-thickness steel
+slab_hull_side_right_lower|Hull|slab|30|50|1|armour steel|hull right lower|L2A7V hull side right lower|Slab over donor bounds; vanilla mesh-thickness steel
+slab_lower_glacis|Hull|slab|120|250|1|composite skirts|lower glacis array|L2A7V lower glacis array slab|Slab over donor bounds; matches skirt composite values
+slab_front_array_left|Hull|slab|360|720|1|hull array|front left array|L2A7V front array left slab|Slab over donor bounds; matches upper front plate values
+slab_front_array_right|Hull|slab|360|720|1|hull array|front right array|L2A7V front array right slab|Slab over donor bounds; matches upper front plate values

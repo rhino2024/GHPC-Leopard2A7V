@@ -12,8 +12,8 @@ Gunner, HEAT, PC! 的 MelonLoader 模组。以本体里的 `LEO2A3` 为供体，
 - 主炮行程 **−9 / +20**，车顶机枪 **−10 / +75**。数字按这辆车自己的页面写，不是照供体的 −10 / +20 抄，所以炮管不会比真车多压一度。
 - 车顶那挺 MG3 变成真武器：能切进它的镜，能开火，「下一件武器」里轮得到，射速和声音沿用供体那挺 7.62（1200 rpm），弹链箱在模型上。
 - 炮手昼间镜里画的是 2A7V 的分划板，倍率档与分划抬落仍由游戏自己的火控驱动。按 `I` 可以把刻线点亮（荧光），再按一次熄灭；入夜时游戏自己会点亮，不受影响。
-- 装甲按 **T-90M 的架构**整套重建（**独立版**，不再是叠加）：数据表 `armour_t90m_style.tsv` 里 35 条配置（外部炮塔模块、首上、内部复合、隔板、衬层），由 `LpArmourBuilder` 读嵌入的 `armor.bin` 与模型真实网格生成 MeshCollider + `UniformArmor` + AAR，注册进原生碰撞组，再按**精确名称**退役供体装甲。每辆车严格车体作用域 + 一次扫描缓存，多辆同场不会互相认走装甲件。每块板一颗**凸包** MeshCollider、挂 rig 骨骼——非凸碰撞体会被 Unity 静默忽略，这是更早版本「装甲时灵时不灵」的根源。
-- 内构也按 **T-90M 的架构**重建：`modules_t90m_style.json` 定义 19 个模块，Build 建区域、Wire 等设备就绪后统一接线。16 个用 `Interior.obj` 的真实网格（动力包、传动、散热器、炮闩、炮管、炮长镜、火控计算机、方向机、液压、高低机、电台、两个弹药架、配电、驾驶员操纵、车长周视镜），3 个明确盒体（座圈电驱动、手动方向机、稳定器），3 个只建可命中区域与状态文本、无原生效果（`report_only`：配电、驾驶员操纵、车长周视镜）。10 个原生 hook 接进游戏的伤害与状态系统。
+- 装甲是**独立版**（不再是叠加），表名也很直白：`armour_l2a7v.tsv`，覆盖 34 种装甲件、15 类命中区。三种模式混用——`build` 由 `LpArmourBuilder` 读嵌入的 `armor.bin` 与模型真实网格生成 MeshCollider + `UniformArmor` + AAR 并注册进原生碰撞组；`edit` 保留供体几何只改写 RHA 数值（尾甲、动力舱顶、甲板翼、炮塔顶/底、尾内壁、驻退机 ×3）；`slab` 对网格厚度驱动的 `VariableArmor` 在碰撞体包围盒上生成自有凸板（车体侧上/下、首下两侧阵、前部左右阵）。供体装甲按**精确名称**退役，履带、负重轮、乘员、舱盖一律保留。每辆车严格车体作用域 + 一次扫描缓存，多辆同场不会互相认走装甲件。每块板一颗**凸包** MeshCollider、挂 rig 骨骼——非凸碰撞体会被 Unity 静默忽略，这是更早版本「装甲时灵时不灵」的根源。
+- 内构同样独立：`modules_l2a7v.json` 定义 22 个模块，Build 建区域、Wire 等设备就绪后统一接线。16 个用 `Interior.obj` 的真实网格（动力包、传动、散热器、炮闩、炮管、炮长镜、火控计算机、方向机、液压、高低机、电台、两个弹药架、配电、驾驶员操纵、车长周视镜），3 个明确盒体（座圈电驱动、手动方向机、稳定器），其余 `report_only`（只建可命中区域与状态文本、无原生效果）。10 个原生 hook 接进游戏的伤害与状态系统。
 - 车长独立周视镜（CITV）：车长位按 `T` 进入/退出，镜内按 `T` 循环 15° / 10° / 4° 视场；旧的 `Z` 入口已删除。
 - 车长舱口的镜窗是真玻璃：战雷导出的镜片是不透明灰，看着像贴了图的板，这里换成供体自己的 `Standard (FLIR)` 玻璃着色。
 - 车会在地形上压出履带印。供体的压印刷（`grass cutter`，layer 24）被保留下来，TraxManager 才能把车体深度写进地形。
@@ -27,7 +27,7 @@ Gunner, HEAT, PC! 的 MelonLoader 模组。以本体里的 `LEO2A3` 为供体，
    Bin\Mods\Leopard2A7V.dll
    Bin\Mods\Leopard2A7V\Leopard2A7V.obj
    Bin\Mods\Leopard2A7V\Leopard2A7V.mtl
-   Bin\Mods\Leopard2A7V\Interior.obj     （内构 19 个模块的真实网格，硬依赖）
+   Bin\Mods\Leopard2A7V\Interior.obj     （内构 22 个模块的真实网格，硬依赖）
    Bin\Mods\Leopard2A7V\CitvAssets\citv_monitor  （车长镜显示器）
    Bin\Mods\Leopard2A7V\L2A7V_data.txt   （可选：装甲/模块覆盖表）
    Bin\Mods\Leopard2A7V\textures\        （2K 图）

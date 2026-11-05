@@ -71,9 +71,28 @@ public static class LpArmourBuilder
             HashSet<string> existing = ExistingPieces(unitRoot.transform);
             int pieces = 0;
             int missing = 0;
+            int edits = 0;
             foreach (LpArmourSpec.Entry entry in spec.Entries)
             {
                 if (existing.Contains(entry.Piece)) continue;
+                // donor_edit: keep the donor geometry/collider, rewrite its
+                // protection values from the table. Idempotent on retry.
+                if (entry.Edit)
+                {
+                    edits += EditDonor(groups, entry);
+                    continue;
+                }
+                // donor slab: build an own slab over the donor's collider
+                // bounds, then let the shared retire path remove the donor.
+                if (entry.Slab)
+                {
+                    if (SpawnSlab(unitRoot, groups, entry, unit))
+                    {
+                        pieces++;
+                        existing.Add(entry.Piece);
+                    }
+                    continue;
+                }
                 if (!Meshes.TryGetValue(entry.Piece, out Mesh mesh))
                 {
                     MelonLogger.Warning("[L2A7V][dm-armour] no source geometry for '" + entry.Piece + "'; donor remains");
@@ -93,7 +112,7 @@ public static class LpArmourBuilder
             // Retire whenever this vehicle owns at least one piece: a retry
             // after a mid-loop exception finds all pieces existing and must
             // still complete donor retirement instead of failing forever.
-            if (pieces == 0 && existing.Count == 0)
+            if (pieces == 0 && edits == 0 && existing.Count == 0)
             {
                 state.Pending = "no valid replacement geometry";
                 return false;
@@ -103,7 +122,7 @@ public static class LpArmourBuilder
             state.Pieces = pieces + existing.Count;
             state.Retired = retired;
             state.Pending = null;
-            MelonLogger.Msg("[L2A7V][dm-armour] built " + pieces + " data-defined piece(s), adopted " + existing.Count + " existing piece(s), retired " + retired + " explicitly named donor plate(s); crew, tracks and unlisted armour retained");
+            MelonLogger.Msg("[L2A7V][dm-armour] built " + pieces + " data-defined piece(s), edited " + edits + " donor value(s), adopted " + existing.Count + " existing piece(s), retired " + retired + " explicitly named donor plate(s); crew, tracks and unlisted armour retained");
             return true;
         }
         catch (Exception ex)
@@ -183,11 +202,171 @@ public static class LpArmourBuilder
         return true;
     }
 
-    private static Transform RootOf(Transform node)
+    // donor_edit mode: the donor's own geometry and collider keep running;
+    // only its protection values are rewritten from the table. UniformArmor
+    // exposes the RHA fields publicly, so no reflection is needed. Variable
+    // armor derives its protection from mesh thickness and cannot be value
+    // edited, which is what the slab mode is for.
+    private static int EditDonor(List<RaycastColliderGroup> groups, LpArmourSpec.Entry entry)
     {
-        Transform result = node;
-        while (result.parent != null) result = result.parent;
-        return result;
+        int edited = 0;
+        HashSet<UniformArmor> seen = new HashSet<UniformArmor>();
+        foreach (RaycastColliderGroup candidate in groups)
+        {
+            foreach (UniformArmor armour in candidate.GetComponentsInChildren<UniformArmor>(true))
+            {
+                if (armour == null || !seen.Add(armour)) continue;
+                if (armour.GetComponent<LpArmourPiece>() != null) continue;
+                if (!string.Equals(armour.gameObject.name, entry.Replace, StringComparison.OrdinalIgnoreCase)) continue;
+                armour.PrimarySabotRha = entry.Ke * LpConfig.ArmorScale;
+                armour.PrimaryHeatRha = entry.Ce * LpConfig.ArmorScale;
+                armour.SecondarySabotRha = armour.PrimarySabotRha;
+                armour.SecondaryHeatRha = armour.PrimaryHeatRha;
+                armour.AngleMatters = entry.AngleMatters;
+                edited++;
+            }
+        }
+        if (edited == 0) MelonLogger.Warning("[L2A7V][dm-armour] donor_edit target '" + entry.Replace + "' not found; vanilla values kept");
+        return edited;
+    }
+
+    // donor slab mode: build an own convex slab over the donor collider's
+    // world bounds expressed in the native collider-group space, then the
+    // shared retire path removes the donor. This replaces mesh-thickness
+    // VariableArmor pieces (whose protection cannot be value edited) with
+    // table-driven uniform plates.
+    private static bool SpawnSlab(GameObject root, List<RaycastColliderGroup> groups, LpArmourSpec.Entry entry, Unit unit)
+    {
+        Component donor = groups.SelectMany(g => g.GetComponentsInChildren<UniformArmor>(true).Cast<Component>()
+                .Concat(g.GetComponentsInChildren<VariableArmor>(true).Cast<Component>()))
+            .FirstOrDefault(a => a != null && a.GetComponent<LpArmourPiece>() == null &&
+                                 string.Equals(a.gameObject.name, entry.Replace, StringComparison.OrdinalIgnoreCase));
+        if (donor == null)
+        {
+            MelonLogger.Warning("[L2A7V][dm-armour] slab donor '" + entry.Replace + "' not found; no replacement spawned");
+            return false;
+        }
+        Collider donorCollider = donor.GetComponent<Collider>();
+        if (donorCollider == null)
+        {
+            MelonLogger.Warning("[L2A7V][dm-armour] slab donor '" + entry.Replace + "' has no collider; no replacement spawned");
+            return false;
+        }
+        string token = entry.Group.ToUpperInvariant() + " COLLIDERS";
+        RaycastColliderGroup rcg = groups.FirstOrDefault(g => g.name.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0);
+        if (rcg == null)
+        {
+            MelonLogger.Warning("[L2A7V][dm-armour] no " + entry.Group + " collider group for slab '" + entry.Piece + "'");
+            return false;
+        }
+        Bounds world = donorCollider.bounds;
+        Matrix4x4 worldToGroup = rcg.transform.worldToLocalMatrix;
+        Vector3 min = new Vector3(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
+        Vector3 max = new Vector3(float.NegativeInfinity, float.NegativeInfinity, float.NegativeInfinity);
+        for (int i = 0; i < 8; i++)
+        {
+            Vector3 corner = worldToGroup.MultiplyPoint3x4(new Vector3(
+                (i & 1) == 0 ? world.min.x : world.max.x,
+                (i & 2) == 0 ? world.min.y : world.max.y,
+                (i & 4) == 0 ? world.min.z : world.max.z));
+            min = Vector3.Min(min, corner);
+            max = Vector3.Max(max, corner);
+        }
+        Vector3 center = (min + max) * 0.5f;
+        Vector3 size = max - min;
+        // Tighten a degenerate axis so the slab stays a plate, not a plane.
+        if (size.x < 0.005f) size.x = 0.005f;
+        if (size.y < 0.005f) size.y = 0.005f;
+        if (size.z < 0.005f) size.z = 0.005f;
+        Mesh slab = SlabMesh(entry.Piece, center, size);
+        GameObject go = new GameObject(entry.Piece);
+        try
+        {
+            go.SetActive(false);
+            go.AddComponent<LpArmourPiece>().Piece = entry.Piece;
+            go.layer = CodeUtils.LAYER_INDEX_RAYCAST_ONLY;
+            try { go.tag = "Penetrable"; } catch (UnityException) { }
+            go.transform.SetParent(rcg.transform, false);
+            go.transform.localPosition = Vector3.zero;
+            go.transform.localRotation = Quaternion.identity;
+            go.transform.localScale = Vector3.one;
+            MeshFilter filter = go.AddComponent<MeshFilter>();
+            filter.sharedMesh = slab;
+            MeshRenderer renderer = go.AddComponent<MeshRenderer>();
+            Material xray = LpArmorOwn.XrayMaterial();
+            if (xray != null) renderer.sharedMaterial = xray;
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            MeshCollider collider = go.AddComponent<MeshCollider>();
+            collider.sharedMesh = slab;
+            collider.convex = true;
+            collider.isTrigger = false;
+            UniformArmor armour = go.AddComponent<UniformArmor>();
+            armour.SetName(entry.Name);
+            armour.PrimarySabotRha = entry.Ke * LpConfig.ArmorScale;
+            armour.PrimaryHeatRha = entry.Ce * LpConfig.ArmorScale;
+            armour.SecondarySabotRha = armour.PrimarySabotRha;
+            armour.SecondaryHeatRha = armour.PrimaryHeatRha;
+            armour.ThicknessListed = UniformArmor.ThicknessMode.RHAE;
+            armour.AngleMatters = entry.AngleMatters;
+            armour.DetonatedObjects = Array.Empty<GameObject>();
+            armour.UndetonatedObjects = Array.Empty<GameObject>();
+            armour.CenterPoint = go.transform;
+            armour.Unit = unit;
+            if (ArmorTypeField != null)
+            {
+                ArmorCodexScriptable codex = Codex(root, entry.Material);
+                if (codex != null) ArmorTypeField.SetValue(armour, codex);
+            }
+            AarVisual aar = go.AddComponent<AarVisual>();
+            aar.RenderMode = AarVisual.AarVisualRenderMode.XrayOnly;
+            aar.HideUntilAar = true;
+            aar.SwitchMaterials = xray != null;
+            aar.AarMaterial = xray;
+            go.SetActive(true);
+            RaycastColliderGroup.AddNewColliderSetToParentGroup(go.transform);
+            aar.UpdateVisibility();
+            return true;
+        }
+        catch (Exception)
+        {
+            UnityEngine.Object.Destroy(go);
+            throw;
+        }
+    }
+
+    private static Mesh SlabMesh(string key, Vector3 center, Vector3 size)
+    {
+        string cacheKey = "slab|" + key + "|" + Sig(Matrix4x4.Translate(center) * Matrix4x4.Scale(size));
+        if (Meshes.TryGetValue(cacheKey, out Mesh cached) && cached != null) return cached;
+        Vector3 half = size * 0.5f;
+        Vector3[] v =
+        {
+            center + new Vector3(-half.x, -half.y, -half.z),
+            center + new Vector3( half.x, -half.y, -half.z),
+            center + new Vector3( half.x,  half.y, -half.z),
+            center + new Vector3(-half.x,  half.y, -half.z),
+            center + new Vector3(-half.x, -half.y,  half.z),
+            center + new Vector3( half.x, -half.y,  half.z),
+            center + new Vector3( half.x,  half.y,  half.z),
+            center + new Vector3(-half.x,  half.y,  half.z)
+        };
+        // Outward-facing cube winding (quads 0-3 -Z, 4-7 +Z, sides, caps).
+        int[] t =
+        {
+            0, 2, 1, 0, 3, 2, // back (-Z)
+            4, 5, 6, 4, 6, 7, // front (+Z)
+            0, 1, 5, 0, 5, 4, // bottom (-Y)
+            3, 6, 2, 3, 7, 6, // top (+Y)
+            0, 4, 7, 0, 7, 3, // left (-X)
+            1, 2, 6, 1, 6, 5  // right (+X)
+        };
+        Mesh mesh = new Mesh { name = "L2A7V slab " + key, indexFormat = IndexFormat.UInt16 };
+        mesh.vertices = v;
+        mesh.triangles = t;
+        mesh.RecalculateBounds();
+        Meshes[cacheKey] = mesh;
+        return mesh;
     }
 
     private static int RetireDonors(HashSet<string> existing, List<RaycastColliderGroup> groups, LpArmourSpec spec)
