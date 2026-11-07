@@ -1,59 +1,163 @@
-﻿# Piece|Group|Mode|KE mm RHA|CE mm RHA|AngleMatters|Material|Exact donor replacement|Display name|Source
-# These are L2A7V-authored values: inherited authoring assumptions, not measured real-world equivalence.
-# Source Geometry comes from Leopard2A7V.obj; Source Xray uses the original export space and is converted once.
-ex_armor_l_17|Turret|uniform|880|1500|1|turret front array|-|L2A7V turret front module left|Geometry; retained L2A7V values
-ex_armor_r_17|Turret|uniform|880|1500|1|turret front array|-|L2A7V turret front module right|Geometry; retained L2A7V values
-ex_armor_l_18|Turret|uniform|460|800|1|turret side array|-|L2A7V turret side module left|Geometry; retained L2A7V values
-ex_armor_r_18|Turret|uniform|460|800|1|turret side array|-|L2A7V turret side module right|Geometry; retained L2A7V values
-ex_armor_body_01|Hull|uniform|360|720|1|hull array|upper front plate|L2A7V upper glacis add-on 01|Geometry; replaces only the named donor upper front plate
-ex_armor_body_03|Hull|uniform|360|720|1|hull array|upper front plate|L2A7V upper glacis add-on 03|Geometry; same explicit donor replacement
-ex_armor_body_04|Hull|uniform|360|720|1|hull array|upper front plate|L2A7V upper glacis add-on 04|Geometry; same explicit donor replacement
-ex_armor_body_05|Hull|uniform|360|720|1|hull array|upper front plate|L2A7V upper glacis add-on 05|Geometry; same explicit donor replacement
-ex_armor_body_06|Hull|uniform|360|720|1|hull array|upper front plate|L2A7V upper glacis add-on 06|Geometry; same explicit donor replacement
-ex_armor_body_07|Hull|uniform|360|720|1|hull array|upper front plate|L2A7V upper glacis add-on 07|Geometry; same explicit donor replacement
-composite_armor_hull_01_xray|Hull|uniform|360|720|1|hull array|lower front plate|L2A7V lower glacis array|Xray; retained L2A7V lower glacis values
-composite_armor_hull_02_xray|Hull|uniform|150|150|1|hull array|hull roof front|L2A7V forward hull deck|Xray; explicit deck replacement
-composite_armor_hull_03_xray|Hull|uniform|120|250|1|composite skirts|skirt left|L2A7V forward side strake|Xray; explicit skirt replacement
-composite_armor_hull_05_xray|Hull|uniform|120|250|1|composite skirts|skirt right|L2A7V side skirt array|Xray; explicit skirt replacement
-composite_armor_hull_04_xray|Hull|composite|50|70|1|armour steel|firewall|L2A7V engine firewall|Xray; closed convex shape only
-composite_armor_turret_01_xray|Turret|uniform|640|1120|1|turret front array|cheek array left A|L2A7V left cheek array|Xray; retained asymmetric L2A7V authoring values
-composite_armor_turret_02_xray|Turret|uniform|320|560|1|turret front array|cheek array right A|L2A7V right cheek array A|Xray; retained asymmetric L2A7V authoring values
-composite_armor_turret_03_xray|Turret|uniform|320|560|1|turret front array|cheek array right B|L2A7V right cheek array B|Xray; retained asymmetric L2A7V authoring values
-composite_armor_turret_04_xray|Turret|uniform|260|340|1|turret side array|array left|L2A7V turret flank array|Xray; retained L2A7V flank values
-composite_armor_turret_05_xray|Turret|composite|250|400|1|armour steel|turret rear right|L2A7V turret rear structure|Xray; closed convex structure only
-composite_armor_turret_06_xray|Turret|uniform|250|400|1|turret side array|bustle armour|L2A7V turret bustle array|Xray; retained L2A7V rear values
-composite_armor_turret_08_xray|Turret|composite|250|400|1|armour steel|bustle rear|L2A7V bustle rear plate|Xray; closed convex shape only
-composite_armor_turret_09_xray|Turret|uniform|250|400|1|turret side array|-|L2A7V turret side structure 09|Xray; donor relationship unconfirmed, retained donor plate
-composite_armor_turret_10_xray|Turret|uniform|350|700|1|mantlet|mantlet|L2A7V mantlet array|Xray; retained L2A7V mantlet values
-composite_armor_turret_11_xray|Turret|uniform|250|400|1|turret side array|sight front armour|L2A7V gun sight surround|Xray; explicit sight surround replacement
-firewall_armor_01_xray|Turret|composite|30|60|1|armour steel|hydraulic compartment inner wall|L2A7V turret firewall|Xray; retained firewall values
-firewall_armor_02_xray|Turret|composite|30|60|1|armour steel|-|L2A7V firewall upper lip|Xray; no confirmed donor counterpart
-spall_liner_01_xray|Turret|drawn|0|0|0|liner|-|L2A7V turret liner 01|Xray visual; no artificial stacked RHA
-spall_liner_02_xray|Turret|drawn|0|0|0|liner|-|L2A7V turret liner 02|Xray visual; no artificial stacked RHA
-spall_liner_03_xray|Turret|drawn|0|0|0|liner|-|L2A7V turret liner 03|Xray visual; no artificial stacked RHA
-spall_liner_04_xray|Turret|drawn|0|0|0|liner|-|L2A7V turret roof liner|Xray visual; no artificial stacked RHA
-spall_liner_05_xray|Turret|drawn|0|0|0|liner|-|L2A7V turret rear liner|Xray visual; no artificial stacked RHA
-spall_liner_06_xray|Hull|drawn|0|0|0|liner|-|L2A7V hull liner left|Xray visual; no artificial stacked RHA
-spall_liner_07_xray|Hull|drawn|0|0|0|liner|-|L2A7V hull liner right|Xray visual; no artificial stacked RHA
-spall_liner_08_xray|Hull|drawn|0|0|0|liner|-|L2A7V hull forward liner|Xray visual; no artificial stacked RHA
-spall_liner_09_xray|Hull|drawn|0|0|0|liner|-|L2A7V driver liner|Xray visual; no artificial stacked RHA
-# --- donor_edit rows: donor geometry/collider kept, values table-driven (2026-11-05 full-coverage pass) ---
-edit_hull_rear|Hull|edit|20|30|1|armour steel|hull rear|L2A7V hull rear plate|Donor edit; vanilla 15/15, L2A7V authoring
-edit_engine_deck|Hull|edit|15|20|1|armour steel|engine deck|L2A7V engine deck|Donor edit; vanilla 15/15, L2A7V authoring
-edit_sponson_left|Hull|edit|20|30|1|armour steel|sponson left|L2A7V left sponson floor|Donor edit; vanilla 20/20, CE raised
-edit_sponson_right|Hull|edit|20|30|1|armour steel|sponson right|L2A7V right sponson floor|Donor edit; vanilla 20/20, CE raised
-edit_turret_roof_front|Turret|edit|60|80|1|armour steel|turret roof front|L2A7V turret roof front|Donor edit; vanilla 40/40, L2A7V authoring
-edit_turret_roof_mid|Turret|edit|40|60|1|armour steel|turret roof mid|L2A7V turret roof mid|Donor edit; vanilla 20/20, L2A7V authoring
-edit_turret_bottom|Turret|edit|20|30|1|armour steel|turret bottom|L2A7V turret bottom|Donor edit; vanilla 14/14, L2A7V authoring
-edit_turret_rear_inner|Turret|edit|250|400|1|armour steel|turret rear right inner|L2A7V turret rear inner wall|Donor edit; vanilla 20/20, matches bustle values
-edit_recuperator_1|Turret|edit|30|50|0|armour steel|recuperator 1|L2A7V recuperator guard 1|Donor edit; vanilla 5/5, angle rule kept
-edit_recuperator_2|Turret|edit|30|50|0|armour steel|recuperator 2|L2A7V recuperator guard 2|Donor edit; vanilla 5/5, angle rule kept
-edit_recuperator_3|Turret|edit|30|50|0|armour steel|recuperator 3|L2A7V recuperator guard 3|Donor edit; vanilla 5/5, angle rule kept
-# --- donor slab rows: own convex slab over donor collider bounds, donor retired (mesh-thickness VariableArmor) ---
-slab_hull_side_left_upper|Hull|slab|30|50|1|armour steel|hull left upper|L2A7V hull side left upper|Slab over donor bounds; vanilla mesh-thickness steel
-slab_hull_side_left_lower|Hull|slab|30|50|1|armour steel|hull left lower|L2A7V hull side left lower|Slab over donor bounds; vanilla mesh-thickness steel
-slab_hull_side_right_upper|Hull|slab|30|50|1|armour steel|hull right upper|L2A7V hull side right upper|Slab over donor bounds; vanilla mesh-thickness steel
-slab_hull_side_right_lower|Hull|slab|30|50|1|armour steel|hull right lower|L2A7V hull side right lower|Slab over donor bounds; vanilla mesh-thickness steel
-slab_lower_glacis|Hull|slab|120|250|1|composite skirts|lower glacis array|L2A7V lower glacis array slab|Slab over donor bounds; matches skirt composite values
-slab_front_array_left|Hull|slab|360|720|1|hull array|front left array|L2A7V front array left slab|Slab over donor bounds; matches upper front plate values
-slab_front_array_right|Hull|slab|360|720|1|hull array|front right array|L2A7V front array right slab|Slab over donor bounds; matches upper front plate values
+# Piece|Group|Mode|KE mm RHA|CE mm RHAe|AngleMatters|Material|Exact donor replacement|Display name|Source
+# L2A7V-authored normal RHAe in mm, before LpConfig.ArmorScale. Generated by tools/gen_armour_tsv.py.
+# One collider per region: an ex_armor module and the x-ray volume describing the same plate
+# never both carry protection, because WeaponMath.GetArmorAlongPath sums every crossing.
+# --- 26 War Thunder x-ray armour volumes (Assets/armor.bin) ---
+composite_armor_hull_01_xray|Hull|uniform|240|480|1|hull array|-|L2A7V glacis array|Xray; WT 216/482 mm faces; sums with ex_armor_body_01 to 360/720
+composite_armor_hull_02_xray|Hull|uniform|30|40|1|armour steel|-|L2A7V hull roof|Xray; WT area-weighted 26.7 mm, normals +/-Y; was 150/150
+composite_armor_hull_03_xray|Hull|drawn|0|0|0|liner|-|L2A7V hull bulkhead 03|Xray; no WT armour plates; structural sheet, was 120/250
+composite_armor_hull_04_xray|Hull|composite|10|15|1|armour steel|-|L2A7V engine firewall|Xray; WT area-weighted 0.1 mm; was 50/70
+composite_armor_hull_05_xray|Hull|drawn|0|0|0|liner|-|L2A7V hull bulkhead 05|Xray; WT 5 of 6 plates 0.0 mm; was 120/250
+composite_armor_turret_01_xray|Turret|uniform|300|560|1|turret front array|-|L2A7V right cheek outer|Xray; WT 103 mm wavg; right front sums 300+320+260=880 KE
+composite_armor_turret_02_xray|Turret|uniform|620|1160|1|turret front array|-|L2A7V left cheek|Xray; WT 343 mm wavg; left front sums 620+260=880 KE
+composite_armor_turret_03_xray|Turret|uniform|320|600|1|turret front array|-|L2A7V right cheek inner|Xray; WT 357 mm wavg; right front sums 300+320+260=880 KE
+composite_armor_turret_04_xray|Turret|uniform|260|340|1|turret side array|-|L2A7V turret body array|Xray; WT 247 mm wavg; common term in both front sums
+composite_armor_turret_05_xray|Turret|composite|250|400|1|armour steel|-|L2A7V turret rear right|Xray; WT largest face 268.9 mm
+composite_armor_turret_06_xray|Turret|uniform|20|30|1|armour steel|-|L2A7V bustle structure|Xray; WT area-weighted 9.7 mm, largest plate 15 mm; was 250/400
+composite_armor_turret_08_xray|Turret|composite|120|200|1|armour steel|-|L2A7V bustle rack wall|Xray; WT faces 77.7/135.7 mm; was 250/400
+composite_armor_turret_09_xray|Turret|uniform|80|140|1|armour steel|-|L2A7V turret roof front|Xray; WT two large faces 87.6/87.7 mm; was 250/400
+composite_armor_turret_10_xray|Gun|uniform|350|700|1|mantlet|-|L2A7V mantlet array|Xray; retained authored value; group corrected Turret -> Gun
+composite_armor_turret_11_xray|Turret|drawn|0|0|0|liner|-|L2A7V gun mount shroud|Xray; WT area-weighted 0.5 mm; was 250/400
+firewall_armor_01_xray|Turret|composite|5|8|1|armour steel|-|L2A7V turret firewall|Xray; WT 1.4 mm; was 30/60
+firewall_armor_02_xray|Turret|composite|5|8|1|armour steel|-|L2A7V bustle firewall lip|Xray; WT 0.1 mm; was 30/60
+spall_liner_01_xray|Turret|drawn|0|0|0|liner|-|L2A7V spall liner 01|Xray; WT <=8.5 mm; visual only, no stacked RHA
+spall_liner_02_xray|Turret|drawn|0|0|0|liner|-|L2A7V spall liner 02|Xray; WT <=8.5 mm; visual only, no stacked RHA
+spall_liner_03_xray|Turret|drawn|0|0|0|liner|-|L2A7V spall liner 03|Xray; WT <=8.5 mm; visual only, no stacked RHA
+spall_liner_04_xray|Turret|drawn|0|0|0|liner|-|L2A7V spall liner 04|Xray; WT <=8.5 mm; visual only, no stacked RHA
+spall_liner_05_xray|Turret|drawn|0|0|0|liner|-|L2A7V spall liner 05|Xray; WT <=8.5 mm; visual only, no stacked RHA
+spall_liner_06_xray|Hull|drawn|0|0|0|liner|-|L2A7V spall liner 06|Xray; WT <=8.5 mm; visual only, no stacked RHA
+spall_liner_07_xray|Hull|drawn|0|0|0|liner|-|L2A7V spall liner 07|Xray; WT <=8.5 mm; visual only, no stacked RHA
+spall_liner_08_xray|Hull|drawn|0|0|0|liner|-|L2A7V spall liner 08|Xray; WT <=8.5 mm; visual only, no stacked RHA
+spall_liner_09_xray|Hull|drawn|0|0|0|liner|-|L2A7V spall liner 09|Xray; WT <=8.5 mm; visual only, no stacked RHA
+# --- 49 exterior armour modules (Leopard2A7V.obj ex_armor_*) ---
+ex_armor_02|Turret|uniform|10|15|1|armour steel|-|L2A7V bustle stowage 02|Geometry; rear basket wall, measured 60-120 mm envelope
+ex_armor_03|Turret|uniform|10|15|1|armour steel|-|L2A7V bustle stowage 03|Geometry; rear basket wall, measured 60-120 mm envelope
+ex_armor_04|Turret|uniform|10|15|1|armour steel|-|L2A7V bustle stowage 04|Geometry; rear basket wall, measured 60-120 mm envelope
+ex_armor_05|Hull|uniform|20|30|1|armour steel|-|L2A7V hull rear step|Geometry; measured 39 mm plate
+ex_armor_06|Turret|uniform|10|15|1|armour steel|-|L2A7V bustle stowage 06|Geometry; rear basket wall, measured 60-120 mm envelope
+ex_armor_07|Hull|uniform|40|60|1|armour steel|-|L2A7V hull roof module 07|Geometry; measured 158 mm envelope, normal +Y
+ex_armor_body_01|Hull|uniform|120|240|1|hull array|-|L2A7V upper glacis module|Geometry; sums with composite_armor_hull_01 to 360/720
+ex_armor_body_03|Hull|uniform|60|100|1|hull array|-|L2A7V hull roof applique 03|Geometry; normal +/-Y at y1.45-1.48; roof 30/40 + applique = 90/140, was 510/870
+ex_armor_body_04|Hull|uniform|60|100|1|hull array|-|L2A7V hull roof applique 04|Geometry; normal +/-Y at y1.45-1.48; roof 30/40 + applique = 90/140, was 510/870
+ex_armor_body_05|Hull|uniform|60|100|1|hull array|-|L2A7V hull roof applique 05|Geometry; normal +/-Y at y1.45-1.48; roof 30/40 + applique = 90/140, was 510/870
+ex_armor_body_06|Hull|uniform|60|100|1|hull array|-|L2A7V hull roof applique 06|Geometry; normal +/-Y at y1.45-1.48; roof 30/40 + applique = 90/140, was 510/870
+ex_armor_body_07|Hull|uniform|60|100|1|hull array|-|L2A7V hull roof applique 07|Geometry; normal +/-Y at y1.45-1.48; roof 30/40 + applique = 90/140, was 510/870
+ex_armor_body_09|Hull|drawn|0|0|0|liner|-|L2A7V hull floor module|Geometry; narrower than the donor floor; slab_hull_floor carries it
+ex_armor_l_01|Hull|uniform|5|8|1|armour steel|-|L2A7V front fender l|Geometry; thin fender steel
+ex_armor_l_02|Hull|uniform|40|70|1|armour steel|-|L2A7V front side guard l2|Geometry; WT hull side module, 0.29 m envelope
+ex_armor_l_03|Hull|uniform|40|70|1|armour steel|-|L2A7V front side guard l3|Geometry; WT hull side module, 0.29 m envelope
+ex_armor_l_04|Hull|uniform|50|100|1|composite skirts|-|L2A7V forward side array l4|Geometry; covers donor front left array; inner+outer sum 100/200
+ex_armor_l_05|Hull|uniform|50|100|1|composite skirts|-|L2A7V forward side array l5|Geometry; covers donor front left array; inner+outer sum 100/200
+ex_armor_l_06|Hull|uniform|50|100|1|composite skirts|-|L2A7V forward side array l6|Geometry; covers donor front left array; inner+outer sum 100/200
+ex_armor_l_07|Hull|uniform|50|100|1|composite skirts|-|L2A7V forward side array l7|Geometry; covers donor front left array; inner+outer sum 100/200
+ex_armor_l_08|Hull|uniform|50|100|1|composite skirts|-|L2A7V forward side array l8|Geometry; covers donor front left array; inner+outer sum 100/200
+ex_armor_l_09|Hull|uniform|50|100|1|composite skirts|-|L2A7V forward side array l9|Geometry; covers donor front left array; inner+outer sum 100/200
+ex_armor_l_10|Hull|uniform|10|20|1|armour steel|-|L2A7V side skirt l10|Geometry; measured 20-29 mm plate; covers donor skirt
+ex_armor_l_11|Hull|uniform|10|20|1|armour steel|-|L2A7V side skirt l11|Geometry; measured 20-29 mm plate; covers donor skirt
+ex_armor_l_12|Hull|uniform|10|20|1|armour steel|-|L2A7V side skirt l12|Geometry; measured 20-29 mm plate; covers donor skirt
+ex_armor_l_13|Hull|uniform|10|20|1|armour steel|-|L2A7V side skirt l13|Geometry; measured 20-29 mm plate; covers donor skirt
+ex_armor_l_14|Hull|uniform|10|20|1|armour steel|-|L2A7V side skirt l14|Geometry; measured 20-29 mm plate; covers donor skirt
+ex_armor_l_15|Hull|uniform|10|20|1|armour steel|-|L2A7V side skirt l15|Geometry; measured 20-29 mm plate; covers donor skirt
+ex_armor_l_16|Hull|uniform|20|30|1|armour steel|-|L2A7V rear mudguard l|Geometry; rear stowage guard
+ex_armor_l_17|Turret|drawn|0|0|0|liner|-|L2A7V turret wedge l17|Geometry; same armour as the turret x-ray volumes; collider would double it
+ex_armor_l_18|Turret|drawn|0|0|0|liner|-|L2A7V turret wedge l18|Geometry; same armour as the turret x-ray volumes; collider would double it
+ex_armor_r_01|Hull|uniform|5|8|1|armour steel|-|L2A7V front fender r|Geometry; thin fender steel
+ex_armor_r_02|Hull|uniform|40|70|1|armour steel|-|L2A7V front side guard r2|Geometry; WT hull side module, 0.29 m envelope
+ex_armor_r_03|Hull|uniform|40|70|1|armour steel|-|L2A7V front side guard r3|Geometry; WT hull side module, 0.29 m envelope
+ex_armor_r_04|Hull|uniform|50|100|1|composite skirts|-|L2A7V forward side array r4|Geometry; covers donor front right array; inner+outer sum 100/200
+ex_armor_r_05|Hull|uniform|50|100|1|composite skirts|-|L2A7V forward side array r5|Geometry; covers donor front right array; inner+outer sum 100/200
+ex_armor_r_06|Hull|uniform|50|100|1|composite skirts|-|L2A7V forward side array r6|Geometry; covers donor front right array; inner+outer sum 100/200
+ex_armor_r_07|Hull|uniform|50|100|1|composite skirts|-|L2A7V forward side array r7|Geometry; covers donor front right array; inner+outer sum 100/200
+ex_armor_r_08|Hull|uniform|50|100|1|composite skirts|-|L2A7V forward side array r8|Geometry; covers donor front right array; inner+outer sum 100/200
+ex_armor_r_09|Hull|uniform|50|100|1|composite skirts|-|L2A7V forward side array r9|Geometry; covers donor front right array; inner+outer sum 100/200
+ex_armor_r_10|Hull|uniform|10|20|1|armour steel|-|L2A7V side skirt r10|Geometry; measured 20-29 mm plate; covers donor skirt
+ex_armor_r_11|Hull|uniform|10|20|1|armour steel|-|L2A7V side skirt r11|Geometry; measured 20-29 mm plate; covers donor skirt
+ex_armor_r_12|Hull|uniform|10|20|1|armour steel|-|L2A7V side skirt r12|Geometry; measured 20-29 mm plate; covers donor skirt
+ex_armor_r_13|Hull|uniform|10|20|1|armour steel|-|L2A7V side skirt r13|Geometry; measured 20-29 mm plate; covers donor skirt
+ex_armor_r_14|Hull|uniform|10|20|1|armour steel|-|L2A7V side skirt r14|Geometry; measured 20-29 mm plate; covers donor skirt
+ex_armor_r_15|Hull|uniform|10|20|1|armour steel|-|L2A7V side skirt r15|Geometry; measured 20-29 mm plate; covers donor skirt
+ex_armor_r_16|Hull|uniform|20|30|1|armour steel|-|L2A7V rear mudguard r|Geometry; rear stowage guard
+ex_armor_r_17|Turret|drawn|0|0|0|liner|-|L2A7V turret wedge r17|Geometry; same armour as the turret x-ray volumes; collider would double it
+ex_armor_r_18|Turret|drawn|0|0|0|liner|-|L2A7V turret wedge r18|Geometry; same armour as the turret x-ray volumes; collider would double it
+# --- 49 donor plates covered by an imported volume: removed outright ---
+retire_001|Turret|retire|0|0|0|armour steel|Leo 2 ammo door armor|remove donor Leo 2 ammo door armor|Coverage probe pad 0.02 m; donor UniformArmor
+retire_002|Turret|retire|0|0|0|armour steel|array left|remove donor array left|Coverage probe pad 0.02 m; donor VariableArmor
+retire_003|Turret|retire|0|0|0|armour steel|array right|remove donor array right|Coverage probe pad 0.02 m; donor VariableArmor
+retire_004|Turret|retire|0|0|0|armour steel|ballistic glass|remove donor ballistic glass|Coverage probe pad 0.02 m; donor UniformArmor
+retire_005|Turret|retire|0|0|0|armour steel|blowoff panel|remove donor blowoff panel|Coverage probe pad 0.02 m; donor UniformArmor
+retire_006|Turret|retire|0|0|0|armour steel|bustle armour|remove donor bustle armour|Coverage probe pad 0.02 m; donor UniformArmor
+retire_007|Turret|retire|0|0|0|armour steel|bustle rack inner|remove donor bustle rack inner|Coverage probe pad 0.02 m; donor UniformArmor
+retire_008|Turret|retire|0|0|0|armour steel|bustle rack outter|remove donor bustle rack outter|Coverage probe pad 0.02 m; donor UniformArmor
+retire_009|Turret|retire|0|0|0|armour steel|bustle rear|remove donor bustle rear|Coverage probe pad 0.02 m; donor UniformArmor
+retire_010|Turret|retire|0|0|0|armour steel|cheek array left A|remove donor cheek array left A|Coverage probe pad 0.02 m; donor VariableArmor
+retire_011|Turret|retire|0|0|0|armour steel|cheek array right A|remove donor cheek array right A|Coverage probe pad 0.02 m; donor VariableArmor
+retire_012|Turret|retire|0|0|0|armour steel|cheek array right B|remove donor cheek array right B|Coverage probe pad 0.02 m; donor VariableArmor
+retire_013|Turret|retire|0|0|0|armour steel|commander's hatch superstructure|remove donor commander's hatch superstructure|Coverage probe pad 0.02 m; donor UniformArmor
+retire_014|Turret|retire|0|0|0|armour steel|commander's sight superstructure|remove donor commander's sight superstructure|Coverage probe pad 0.02 m; donor UniformArmor
+retire_015|Turret|retire|0|0|0|armour steel|driver's hatch|remove donor driver's hatch|Coverage probe pad 0.02 m; donor VariableArmor
+retire_016|Turret|retire|0|0|0|armour steel|firewall|remove donor firewall|Coverage probe pad 0.02 m; donor UniformArmor
+retire_017|Turret|retire|0|0|0|armour steel|front fender left|remove donor front fender left|Coverage probe pad 0.02 m; donor UniformArmor
+retire_018|Turret|retire|0|0|0|armour steel|front fender right|remove donor front fender right|Coverage probe pad 0.02 m; donor UniformArmor
+retire_019|Turret|retire|0|0|0|armour steel|front left array|remove donor front left array|Coverage probe pad 0.02 m; donor VariableArmor
+retire_020|Turret|retire|0|0|0|armour steel|front left plate|remove donor front left plate|Coverage probe pad 0.02 m; donor UniformArmor
+retire_021|Turret|retire|0|0|0|armour steel|front right array|remove donor front right array|Coverage probe pad 0.02 m; donor VariableArmor
+retire_022|Turret|retire|0|0|0|armour steel|front right plate|remove donor front right plate|Coverage probe pad 0.02 m; donor UniformArmor
+retire_023|Turret|retire|0|0|0|armour steel|gun mount|remove donor gun mount|Coverage probe pad 0.02 m; donor VariableArmor
+retire_024|Turret|retire|0|0|0|armour steel|hull roof front|remove donor hull roof front|Coverage probe pad 0.02 m; donor VariableArmor
+retire_025|Turret|retire|0|0|0|armour steel|hydraulic compartment inner wall|remove donor hydraulic compartment inner wall|Coverage probe pad 0.02 m; donor UniformArmor
+retire_026|Turret|retire|0|0|0|armour steel|hydraulic compartment roof|remove donor hydraulic compartment roof|Coverage probe pad 0.02 m; donor UniformArmor
+retire_027|Turret|retire|0|0|0|armour steel|hydraulic compartment wall|remove donor hydraulic compartment wall|Coverage probe pad 0.02 m; donor UniformArmor
+retire_028|Turret|retire|0|0|0|armour steel|inside walls|remove donor inside walls|Coverage probe pad 0.02 m; donor UniformArmor
+retire_029|Turret|retire|0|0|0|armour steel|left cheek plate|remove donor left cheek plate|Coverage probe pad 0.02 m; donor VariableArmor
+retire_030|Turret|retire|0|0|0|armour steel|loader's hatch|remove donor loader's hatch|Coverage probe pad 0.02 m; donor UniformArmor
+retire_031|Turret|retire|0|0|0|armour steel|loader's hatch superstructure|remove donor loader's hatch superstructure|Coverage probe pad 0.02 m; donor UniformArmor
+retire_032|Turret|retire|0|0|0|armour steel|lower glacis array|remove donor lower glacis array|Coverage probe pad 0.02 m; donor VariableArmor
+retire_033|Turret|retire|0|0|0|armour steel|mantlet|remove donor mantlet|Coverage probe pad 0.02 m; donor VariableArmor
+retire_034|Turret|retire|0|0|0|armour steel|mantlet recess faces|remove donor mantlet recess faces|Coverage probe pad 0.02 m; donor VariableArmor
+retire_035|Turret|retire|0|0|0|armour steel|right cheek plate|remove donor right cheek plate|Coverage probe pad 0.02 m; donor VariableArmor
+retire_036|Turret|retire|0|0|0|armour steel|sight channel surfaces|remove donor sight channel surfaces|Coverage probe pad 0.02 m; donor UniformArmor
+retire_037|Turret|retire|0|0|0|armour steel|sight cover|remove donor sight cover|Coverage probe pad 0.02 m; donor UniformArmor
+retire_038|Turret|retire|0|0|0|armour steel|sight front armour|remove donor sight front armour|Coverage probe pad 0.02 m; donor UniformArmor
+retire_039|Turret|retire|0|0|0|armour steel|skirt left|remove donor skirt left|Coverage probe pad 0.02 m; donor UniformArmor
+retire_040|Turret|retire|0|0|0|armour steel|skirt right|remove donor skirt right|Coverage probe pad 0.02 m; donor UniformArmor
+retire_041|Turret|retire|0|0|0|armour steel|sponson left|remove donor sponson left|Coverage probe pad 0.02 m; donor UniformArmor
+retire_042|Turret|retire|0|0|0|armour steel|sponson right|remove donor sponson right|Coverage probe pad 0.02 m; donor UniformArmor
+retire_043|Turret|retire|0|0|0|armour steel|turret bottom|remove donor turret bottom|Coverage probe pad 0.02 m; donor UniformArmor
+retire_044|Turret|retire|0|0|0|armour steel|turret rear right|remove donor turret rear right|Coverage probe pad 0.02 m; donor UniformArmor
+retire_045|Turret|retire|0|0|0|armour steel|turret rear right inner|remove donor turret rear right inner|Coverage probe pad 0.02 m; donor UniformArmor
+retire_046|Turret|retire|0|0|0|armour steel|turret ring|remove donor turret ring|Coverage probe pad 0.02 m; donor UniformArmor
+retire_047|Turret|retire|0|0|0|armour steel|turret roof front|remove donor turret roof front|Coverage probe pad 0.02 m; donor UniformArmor
+retire_048|Turret|retire|0|0|0|armour steel|turret roof mid|remove donor turret roof mid|Coverage probe pad 0.02 m; donor UniformArmor
+retire_049|Turret|retire|0|0|0|armour steel|upper glacis array|remove donor upper glacis array|Coverage probe pad 0.02 m; donor VariableArmor
+# --- 8 VariableArmor plates: own slab over the donor bounds, donor removed ---
+slab_hull_floor_front|Hull|slab|20|30|1|armour steel|hull floor front|L2A7V hull floor front|Slab; donor mesh-thickness steel
+slab_hull_floor|Hull|slab|20|30|1|armour steel|hull floor|L2A7V hull floor|Slab; donor 5.80 m span outruns ex_armor_body_09
+slab_hull_left_lower|Hull|slab|30|50|1|armour steel|hull left lower|L2A7V hull side left lower|Slab; donor mesh-thickness steel
+slab_hull_left_upper|Hull|slab|40|60|1|armour steel|hull left upper|L2A7V hull side left upper|Slab; donor mesh-thickness steel
+slab_hull_right_lower|Hull|slab|30|50|1|armour steel|hull right lower|L2A7V hull side right lower|Slab; donor mesh-thickness steel
+slab_hull_right_upper|Hull|slab|40|60|1|armour steel|hull right upper|L2A7V hull side right upper|Slab; donor mesh-thickness steel
+slab_lower_front_plate|Hull|slab|120|250|1|armour steel|lower front plate|L2A7V lower front plate|Slab; sums with hull_01 to 360/730
+slab_upper_front_plate|Hull|slab|240|480|1|armour steel|upper front plate|L2A7V upper front plate|Slab; outruns hull_01; sums with body_01 to 360/720
+# --- 14 UniformArmor fittings: own slab over the donor bounds, donor removed ---
+slab_commanders_hatch|Turret|slab|15|20|1|armour steel|commander's hatch|L2A7V commander's hatch|Slab; donor 10/10
+slab_commanders_sight|Turret|slab|15|20|1|armour steel|commander's sight|L2A7V PERI housing|Slab; donor 15/15
+slab_Commanders_Skate|Turret|slab|10|15|1|armour steel|Commander's Skate|L2A7V commander's skate ring|Slab; donor 10/10
+slab_Commanders_Skate_Polygonal|Turret|slab|10|15|1|armour steel|Commander's Skate Polygonal|L2A7V commander's skate ring (polygonal)|Slab; donor 10/10
+slab_Loaders_Skate|Turret|slab|10|15|1|armour steel|Loader's Skate|L2A7V loader's skate ring|Slab; donor 10/10
+slab_PERI_glass|Turret|slab|0|0|0|armour steel|PERI glass|L2A7V PERI glass|Slab; donor 0/0; glass gives no protection
+slab_engine_deck|Hull|slab|15|20|1|armour steel|engine deck|L2A7V engine deck|Slab; donor 15/15
+slab_hull_rear|Hull|slab|20|30|1|armour steel|hull rear|L2A7V hull rear plate|Slab; donor 15/15
+slab_rear_grill|Hull|slab|8|10|1|armour steel|rear grill|L2A7V rear grill|Slab; donor 8/8
+slab_headlamp_left|Hull|slab|5|5|1|armour steel|headlamp left|L2A7V headlamp left|Slab; donor 5/5
+slab_headlamp_right|Hull|slab|5|5|1|armour steel|headlamp right|L2A7V headlamp right|Slab; donor 5/5
+slab_mudguard_l|Hull|slab|5|8|1|armour steel|mudguard_l|L2A7V mudguard left|Slab; donor 5/5
+slab_mudguard_r|Hull|slab|5|8|1|armour steel|mudguard_r|L2A7V mudguard right|Slab; donor 5/5
+slab_thermal_sleeve|Gun|slab|1|1|1|armour steel|thermal sleeve|L2A7V barrel thermal sleeve|Slab; donor 1/1
+# --- 7 keep prefixes: 36 donor nodes deliberately reused ---
+keep_wheel_|Hull|keep|0|0|0|armour steel|wheel_|keep donor running gear wheels|Keep; 34 donor running-gear nodes reused via UseDonorRunningGear
+keep_axle_|Hull|keep|0|0|0|armour steel|axle_|keep donor running gear axles|Keep; 34 donor running-gear nodes reused via UseDonorRunningGear
+keep_idler_|Hull|keep|0|0|0|armour steel|idler_|keep donor running gear idlers|Keep; 34 donor running-gear nodes reused via UseDonorRunningGear
+keep_sprocket_|Hull|keep|0|0|0|armour steel|sprocket_|keep donor running gear sprockets|Keep; 34 donor running-gear nodes reused via UseDonorRunningGear
+keep_track|Hull|keep|0|0|0|armour steel|track |keep donor running gear tracks|Keep; 34 donor running-gear nodes reused via UseDonorRunningGear
+keep_gun_barrel|Hull|keep|0|0|0|armour steel|gun barrel|keep donor gun barrel|Keep; material-driven gun steel, not a 2A3-specific number
+keep_gun_rotor|Hull|keep|0|0|0|armour steel|gun rotor|keep donor gun rotor|Keep; material-driven gun steel, not a 2A3-specific number

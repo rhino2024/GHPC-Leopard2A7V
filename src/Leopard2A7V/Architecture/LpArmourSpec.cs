@@ -29,9 +29,13 @@ public sealed class LpArmourSpec
         public bool Drawn => Mode == "drawn";
         public bool Edit => Mode == "edit";
         public bool Slab => Mode == "slab";
-        // Edit and slab entries drive an existing donor piece instead of
-        // spawning baked geometry, so they never need a Meshes lookup.
-        public bool NeedsGeometry => !Drawn && !Edit && !Slab;
+        public bool Retire => Mode == "retire";
+        // A keep row's Replace is a name prefix, not an exact node name: one
+        // row claims a whole family (wheel_, axle_, track ) for the audit.
+        public bool Keep => Mode == "keep";
+        // Edit, slab, retire and keep rows drive an existing donor piece instead
+        // of spawning baked geometry, so they never need a Meshes lookup.
+        public bool NeedsGeometry => !Drawn && !Edit && !Slab && !Retire && !Keep;
     }
 
     public readonly List<Entry> Entries = new List<Entry>();
@@ -62,10 +66,10 @@ public sealed class LpArmourSpec
                         Material = Clean(f[6]), Replace = Clean(f[7]), Name = Clean(f[8]), Source = Clean(f[9])
                     };
                     if (e.Piece.Length == 0 || (e.Mode != "uniform" && e.Mode != "composite" && e.Mode != "drawn"
-                        && e.Mode != "edit" && e.Mode != "slab"))
+                        && e.Mode != "edit" && e.Mode != "slab" && e.Mode != "retire" && e.Mode != "keep"))
                         throw new FormatException("invalid armour table line " + number);
-                    // Edit/slab drive an existing donor piece by exact name.
-                    if ((e.Edit || e.Slab) && (e.Replace.Length == 0 || e.Replace == "-"))
+                    // Edit/slab/retire/keep drive an existing donor piece by name.
+                    if ((e.Edit || e.Slab || e.Retire || e.Keep) && (e.Replace.Length == 0 || e.Replace == "-"))
                         throw new FormatException("armour table line " + number + ": " + e.Mode + " needs an exact donor replacement name");
                     if (!e.Drawn && (e.Ke < 0f || e.Ce < 0f)) throw new FormatException("negative protection on line " + number);
                     result.Entries.Add(e);

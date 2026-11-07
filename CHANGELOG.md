@@ -2,6 +2,16 @@
 
 ## 0.3.2
 
+**2026-11-07 收尾（本机打包版）：供体外部装甲清零 + 内构整体换战雷。** 以下条目压过本节下文的早期描述（34 种/edit 模式/供体内构保留已成历史）：
+
+- **只保留 2A7V 防护**：`armour_l2a7v.tsv` 扩到 153 行（uniform 53 / drawn 17 / composite 5 / retire 49 / slab 22 / keep 7）。供体 107 个外部装甲节点：71 个删除（49 直接退役 + 22 自有 slab 盖等效板后退役，含原 14 个 edit 配件全部转 slab），36 个行走机构/炮管钢件明确保留（用户拍板）。75 个导入网格全部被表引用；退役以 `missing == 0` 为闸门，slab 失败只标记 UNCLAIMED 不拆供体（不留洞）。审计自证行：`census … UNCLAIMED=0`。
+- **内构整体换战雷**（用户原话"L2A3的渲染、碰撞体和装甲组件删掉，改成使用战雷的碰撞体和装甲组件以及渲染"）：`LpInteriorSwap` 把 `LEO2_aar_*`、`LEO2_int`、`M1IP_interior`（bundle 混带的 M1 件）、TURRET FLOOR 容器内供体的渲染器/碰撞体/装甲全拆（64 个装甲组件）；乘员命中区、弹药架、DestructibleComponent 保留（逻辑不是外观）。战雷 `Interior.obj` 86 组精确三分：26 组装甲、17 组模块、43 组纯 x-ray 渲染（37 发炮弹 + 4 个乘员人形 + 耳轴 + 炮管_02）。供体 8 个 `Soldier_body/head` 渲染器 + 4 个 AarVisual 双隐藏，x-ray 里不再有游戏蓝色士兵。
+- **模块自带阻力**：`modules_l2a7v.json` 22 个模块全部带 ke/ce（法向 RHAe mm，吃 `ArmorCoefficient`，乘 1/cos），21 个非零；`gun_barrel` 0/0——供体炮管钢件是 keep 行，再挂装甲会沿射线叠加。模块区成为内构阻力的唯一来源。
+- **初始化顺序固定** weapons→modules→interior→armour→hatches→smoke→wiring：modules 先于 interior 让 `Codex()` 还能找到供体 armour steel；interior 先于 armour 让审计看到换后状态（interior=0）。审计新增 `module` 桶。自证行：`[dm-interior] donor interior stripped: 64 armour … remaining=0; WT visuals=43, donor crew figures hidden=8`。
+- **配置四项**（此前条目已分散记过）：`Skin`（factory/nato/desert/winter/parade）、`TextureResolution`（2k/4k，默认 2k）、`ArmorCoefficient`（0.3–3，默认 1）、`Ammo`（dm53 1750 m/s / dm73 1780 m/s，默认 dm73，均 800 mm 穿深）。cfg 里 `ArmorLayers`/`RealAxis` 旧行不再被读取。
+- **车长 CITV**：T 进镜、滚轮 15°/10°/4°、镜内 T 开关热成像、Ctrl 切极性；镜体美术随观瞄回转，镜窗换供体真玻璃。
+- **验证状态（如实）**：本版经过离线取证（KD-tree 贴合测量、107 节点认领核对、86 组零件分区）+ ilspycmd IL 核对 + 嵌入资源逐字节核对；**尚未进游戏运行**，游戏内核对清单见包内 INSTALL.txt 第五节。
+
 **发布版：独立架构 + 数据模型命名独立 + 供体全量替换。** 相对 0.3.2-rc1（早期独立版构建，未随 release 发布）的 35 条表，本版把能替换的供体件都替换了，并且不再借用 T-90M 的命名。
 
 - **改名**：`armour_t90m_style.tsv` → `armour_l2a7v.tsv`，`modules_t90m_style.json` → `modules_l2a7v.json`；源码注释与版本号去掉 t90m 字样。全 DLL 字符串扫描 0 处 `T90M`/`t90m`。

@@ -6,15 +6,15 @@ Gunner, HEAT, PC! 的 MelonLoader 模组。以本体里的 `LEO2A3` 为供体，
 
 ## 你会看到什么
 
-- 载具列表里多一辆 **Leopard 2A7V**（内部 key `LEO2A7V`）。它是从 `LEO2A3` 克隆出来的，所以装甲布局、悬挂、乘员位、瞄具机位都沿用供体，换掉的只是外观和武器参数。
-- 主炮改称 **Rh-120 L/55**，弹种是 **DM53 APFSDS-T**：以游戏自己的 AP 弹为模板在运行时复制一份，换上 L/55 的炮口初速（1750 m/s）与 800 mm 穿深（炮口口径的真车数据，游戏自己按弹速衰减，2 km 处约 665 mm），弹道仍走游戏原本那套飞行模型。
-- 行动前的弹药下拉里，这辆车**不会出现**。游戏那个面板是按供体的弹药清单建行的，认不出运行时造出来的弹种，只会把供体那两种旧弹摆在本车名字下面；模组把这几行整个拿掉，车就按自己那份清单出生——默认装 DM53。任务里想换弹，用炮塔里的弹架转移界面。
+- 载具列表里多一辆 **Leopard 2A7V**（内部 key `LEO2A7V`）。它是从 `LEO2A3` 克隆出来的，悬挂、乘员位、瞄具机位沿用供体；外观、装甲、内构、弹药与武器参数全部换成这辆车自己的。
+- 主炮改称 **Rh-120 L/55**，默认弹种 **DM73 APFSDS-T**（1780 m/s），配置里可换 **DM53**（1750 m/s）：以游戏自己的 AP 弹为模板在运行时复制，两者都是炮口 800 mm 穿深（真车数据，游戏自己按弹速衰减，2 km 处约 665 mm），弹道仍走游戏原本那套飞行模型。
+- 行动前的弹药下拉里，这辆车**不会出现**。游戏那个面板是按供体的弹药清单建行的，认不出运行时造出来的弹种，只会把供体那两种旧弹摆在本车名字下面；模组把这几行整个拿掉，车就按自己那份清单出生——默认装 DM73。任务里想换弹，用炮塔里的弹架转移界面。
 - 主炮行程 **−9 / +20**，车顶机枪 **−10 / +75**。数字按这辆车自己的页面写，不是照供体的 −10 / +20 抄，所以炮管不会比真车多压一度。
 - 车顶那挺 MG3 变成真武器：能切进它的镜，能开火，「下一件武器」里轮得到，射速和声音沿用供体那挺 7.62（1200 rpm），弹链箱在模型上。
 - 炮手昼间镜里画的是 2A7V 的分划板，倍率档与分划抬落仍由游戏自己的火控驱动。按 `I` 可以把刻线点亮（荧光），再按一次熄灭；入夜时游戏自己会点亮，不受影响。
-- 装甲是**独立版**（不再是叠加），表名也很直白：`armour_l2a7v.tsv`，覆盖 34 种装甲件、15 类命中区。三种模式混用——`build` 由 `LpArmourBuilder` 读嵌入的 `armor.bin` 与模型真实网格生成 MeshCollider + `UniformArmor` + AAR 并注册进原生碰撞组；`edit` 保留供体几何只改写 RHA 数值（尾甲、动力舱顶、甲板翼、炮塔顶/底、尾内壁、驻退机 ×3）；`slab` 对网格厚度驱动的 `VariableArmor` 在碰撞体包围盒上生成自有凸板（车体侧上/下、首下两侧阵、前部左右阵）。供体装甲按**精确名称**退役，履带、负重轮、乘员、舱盖一律保留。每辆车严格车体作用域 + 一次扫描缓存，多辆同场不会互相认走装甲件。每块板一颗**凸包** MeshCollider、挂 rig 骨骼——非凸碰撞体会被 Unity 静默忽略，这是更早版本「装甲时灵时不灵」的根源。
-- 内构同样独立：`modules_l2a7v.json` 定义 22 个模块，Build 建区域、Wire 等设备就绪后统一接线。16 个用 `Interior.obj` 的真实网格（动力包、传动、散热器、炮闩、炮管、炮长镜、火控计算机、方向机、液压、高低机、电台、两个弹药架、配电、驾驶员操纵、车长周视镜），3 个明确盒体（座圈电驱动、手动方向机、稳定器），其余 `report_only`（只建可命中区域与状态文本、无原生效果）。10 个原生 hook 接进游戏的伤害与状态系统。
-- 车长独立周视镜（CITV）：车长位按 `T` 进入/退出，镜内按 `T` 循环 15° / 10° / 4° 视场；旧的 `Z` 入口已删除。
+- 装甲是**完全独立的 2A7V 防护**：`armour_l2a7v.tsv` 153 行（uniform 53 / drawn 17 / composite 5 / retire 49 / slab 22 / keep 7）。供体 107 个外部装甲节点里 71 个被删除（49 直接退役 + 22 块自有等效板盖住后退役），只剩 36 个行走机构/炮管钢件保留原值——轮子履带的被击伤手感不变。数值是法向 RHAe，命中按 1/cos 换算，再乘配置里的 `ArmorCoefficient`。每块板一颗**凸包** MeshCollider、挂 rig 骨骼、注册进原生碰撞组；每辆车严格车体作用域，多辆同场不会互相认走装甲件。退役有闸门：任何一块该建的没建成，供体一件不拆（不留防护洞），审计日志 `UNCLAIMED=0` 自证。
+- 内构**整体是战雷的**：供体 L2A3 内构（`LEO2_aar_*`、`LEO2_int`、混带的 M1 件）的渲染、碰撞体、装甲组件全部拆除，只留乘员命中区、弹药架和损伤组件这些逻辑。战雷 `Interior.obj` 86 组零件精确三分：26 组是装甲、17 组是模块、43 组纯 x-ray 显示（37 发炮弹、4 个乘员人形、耳轴、炮管）。`modules_l2a7v.json` 定义 22 个模块，每个自带 ke/ce 阻力（法向 RHAe mm）——内构阻力只来自这些模块区，不再和供体重复计费；10 个原生 hook 接进游戏的伤害与状态系统，毁伤会显示在状态文本里。供体的蓝色士兵人形被隐藏，x-ray 里看到的是战雷乘员。
+- 车长独立周视镜（CITV）：车长位按 `T` 进镜，滚轮循环 15° / 10° / 4° 视场，镜内按 `T` 开关热成像、`Ctrl` 切极性；镜体美术随观瞄一起转。
 - 车长舱口的镜窗是真玻璃：战雷导出的镜片是不透明灰，看着像贴了图的板，这里换成供体自己的 `Standard (FLIR)` 玻璃着色。
 - 车会在地形上压出履带印。供体的压印刷（`grass cutter`，layer 24）被保留下来，TraxManager 才能把车体深度写进地形。
 
@@ -101,7 +101,7 @@ dotnet build -c Release -p:GameDir="E:/SteamLibrary/steamapps/common/Gunner HEAT
 
 ## In English
 
-A Leopard 2A7V for GHPC, cloned from the vanilla `LEO2A3` so that armor, suspension, crew stations and optic slots stay the donor's own while the art, the gun codex, the round, the elevation arc, the roof machine gun and the gunner's daylight reticle become this vehicle's. The main gun is renamed `Rh-120 L/55` and fires `DM53 APFSDS-T`, built at runtime from the donor's AP round so that it carries the L/55's muzzle velocity and 800 mm of penetration at the muzzle (the game scales it down with the round's own velocity decay, to about 665 mm at 2 km) through the game's own ballistic model; the mission customiser's ammunition row is removed for this vehicle, which therefore spawns on its own list. Elevation is limited to −9/+20 for the gun and −10/+75 for the roof MG, and that MG is a real weapon with its own sight, fire control and 1200 rpm sound. The vehicle model is retopologised from the Leopard 2A7V in War Thunder and then heavily reworked here (decimated, re-UV'd, textures rebuilt for this game's lighting), with the original model and textures remaining Gaijin Entertainment's. That set, its material and the 37 textures ship with both the repository (`assets/Leopard2A7V/`) and the release archive, so unzipping to the game root is all the setup there is. The arcs, the tread pitch and the sight magnification were measured offline and still want in-game confirmation. MIT, unrelated to Radian Simulations.
+A Leopard 2A7V for GHPC, cloned from the vanilla `LEO2A3` so that suspension, crew stations and optic slots stay the donor's own while the art, armor, interior, gun codex, rounds, elevation arc, roof machine gun and reticles become this vehicle's. The donor's exterior armor is removed (71 nodes retired or replaced by own slabs; 36 running-gear/gun-steel nodes kept) and its interior renderers, colliders and armor are stripped entirely — the War Thunder Interior.obj takes over the x-ray, and 22 own module zones carry the interior resistance. The main gun is renamed `Rh-120 L/55` and fires `DM73 APFSDS-T` by default (`DM53` selectable), built at runtime from the donor's AP round so that it carries the L/55's muzzle velocity and 800 mm of penetration at the muzzle (the game scales it down with the round's own velocity decay, to about 665 mm at 2 km) through the game's own ballistic model; the mission customiser's ammunition row is removed for this vehicle, which therefore spawns on its own list. Elevation is limited to −9/+20 for the gun and −10/+75 for the roof MG, and that MG is a real weapon with its own sight, fire control and 1200 rpm sound. The vehicle model is retopologised from the Leopard 2A7V in War Thunder and then heavily reworked here (decimated, re-UV'd, textures rebuilt for this game's lighting), with the original model and textures remaining Gaijin Entertainment's. That set, its material and the 37 textures ship with both the repository (`assets/Leopard2A7V/`) and the release archive, so unzipping to the game root is all the setup there is. The arcs, the tread pitch and the sight magnification were measured offline and still want in-game confirmation. MIT, unrelated to Radian Simulations.
 
 ## 授权
 

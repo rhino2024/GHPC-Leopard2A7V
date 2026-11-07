@@ -21,6 +21,13 @@ public sealed class LpArmourPiece : MonoBehaviour
     public string Piece;
 }
 
+// Marks a donor plate whose protection values were rewritten from the table.
+// The coverage audit uses it to prove no donor piece keeps a vanilla number.
+public sealed class LpArmourEdited : MonoBehaviour
+{
+    public string Piece;
+}
+
 public static class LpArmourBuilder
 {
     private sealed class State : MonoBehaviour
@@ -74,12 +81,14 @@ public static class LpArmourBuilder
             int edits = 0;
             foreach (LpArmourSpec.Entry entry in spec.Entries)
             {
+                // retire/keep carry no geometry: they only claim donor names.
+                if (entry.Retire || entry.Keep) continue;
                 if (existing.Contains(entry.Piece)) continue;
                 // donor_edit: keep the donor geometry/collider, rewrite its
                 // protection values from the table. Idempotent on retry.
                 if (entry.Edit)
                 {
-                    edits += EditDonor(groups, entry);
+                    edits += EditDonor(unitRoot, entry);
                     continue;
                 }
                 // donor slab: build an own slab over the donor's collider
@@ -99,15 +108,14 @@ public static class LpArmourBuilder
                     missing++;
                     continue;
                 }
-                Transform bone = Bone(rig, entry.Group);
+                Transform pivot = ArtPivot(unitRoot, entry.Group);
                 Transform group = GroupRoot(groups, entry.Group);
-                if (bone == null || group == null)
+                if (pivot == null || group == null)
                 {
-                    MelonLogger.Warning("[L2A7V][dm-armour] no " + entry.Group + " bone/group for '" + entry.Piece + "'; donor remains");
-                    missing++;
-                    continue;
+                    state.Pending = "waiting for the " + entry.Group + " art pivot and native collider group";
+                    return false;
                 }
-                if (Spawn(unitRoot, rig, bone, group, entry, mesh, unit)) pieces++;
+                if (Spawn(unitRoot, pivot, group, entry, mesh, unit)) pieces++;
             }
             // Retire whenever this vehicle owns at least one piece: a retry
             // after a mid-loop exception finds all pieces existing and must
@@ -117,12 +125,19 @@ public static class LpArmourBuilder
                 state.Pending = "no valid replacement geometry";
                 return false;
             }
-            int retired = RetireDonors(existing, groups, spec);
+            HashSet<string> retiredNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            // Retire rows claim donor plates unconditionally, so a replacement
+            // that failed to resolve would leave a hole. Never strip the donor
+            // unless every tabled piece actually spawned.
+            int retired = 0;
+            if (missing == 0) retired = RetireDonors(existing, groups, spec, retiredNames);
+            else MelonLogger.Error("[L2A7V][dm-armour] " + missing + " replacement mesh(es) missing; donor protection left in place rather than opening a hole");
             state.Built = true;
             state.Pieces = pieces + existing.Count;
             state.Retired = retired;
             state.Pending = null;
-            MelonLogger.Msg("[L2A7V][dm-armour] built " + pieces + " data-defined piece(s), edited " + edits + " donor value(s), adopted " + existing.Count + " existing piece(s), retired " + retired + " explicitly named donor plate(s); crew, tracks and unlisted armour retained");
+            MelonLogger.Msg("[L2A7V][dm-armour] built " + pieces + " data-defined piece(s), edited " + edits + " donor value(s), adopted " + existing.Count + " existing piece(s), retired " + retired + " donor plate(s), " + missing + " missing geometry");
+            Audit(unitRoot, rig, spec, retired, retiredNames);
             return true;
         }
         catch (Exception ex)
@@ -133,27 +148,23 @@ public static class LpArmourBuilder
         }
     }
 
-    private static bool Spawn(GameObject root, Transform rig, Transform bone, Transform group, LpArmourSpec.Entry entry, Mesh mesh, Unit unit)
+    private static bool Spawn(GameObject root, Transform pivot, Transform group, LpArmourSpec.Entry entry, Mesh mesh, Unit unit)
     {
-        GameObject parent = root.transform.Find("L2A7V_DM")?.gameObject;
-        if (parent == null)
-        {
-            parent = new GameObject("L2A7V_DM");
-            parent.transform.SetParent(root.transform, false);
-        }
         GameObject go = new GameObject(entry.Piece);
         go.SetActive(false);
         go.AddComponent<LpArmourPiece>().Piece = entry.Piece;
-        go.transform.SetParent(parent.transform, false);
         go.layer = CodeUtils.LAYER_INDEX_RAYCAST_ONLY;
         try { go.tag = "Penetrable"; } catch (UnityException) { }
-        Matrix4x4 sourceToBone = bone.worldToLocalMatrix * rig.localToWorldMatrix;
-        Matrix4x4 boneToGroup = group.worldToLocalMatrix * bone.localToWorldMatrix;
         go.transform.SetParent(group, false);
-        go.transform.localPosition = boneToGroup.MultiplyPoint3x4(Vector3.zero);
-        go.transform.localRotation = boneToGroup.rotation;
+        go.transform.localPosition = Vector3.zero;
+        go.transform.localRotation = Quaternion.identity;
         go.transform.localScale = Vector3.one;
-        Mesh baked = Bake(entry.Piece, mesh, sourceToBone * Matrix4x4.Translate(-Anchor(entry)));
+        // Bake rig -> collider group through the very pivot the visible art
+        // rides, with the same anchor LpAssets.BuildWhere subtracts. Deriving
+        // this from the drive bone instead subtracted the anchor twice.
+        Matrix4x4 rigToGroup = group.worldToLocalMatrix * pivot.localToWorldMatrix
+            * Matrix4x4.Translate(-ArtAnchor(entry.Group));
+        Mesh baked = Bake(entry.Piece, mesh, rigToGroup);
         if (baked == null || baked.triangles.Length < 3)
         {
             UnityEngine.Object.Destroy(go);
@@ -207,24 +218,24 @@ public static class LpArmourBuilder
     // exposes the RHA fields publicly, so no reflection is needed. Variable
     // armor derives its protection from mesh thickness and cannot be value
     // edited, which is what the slab mode is for.
-    private static int EditDonor(List<RaycastColliderGroup> groups, LpArmourSpec.Entry entry)
+    private static int EditDonor(GameObject unitRoot, LpArmourSpec.Entry entry)
     {
         int edited = 0;
-        HashSet<UniformArmor> seen = new HashSet<UniformArmor>();
-        foreach (RaycastColliderGroup candidate in groups)
+        foreach (UniformArmor armour in unitRoot.GetComponentsInChildren<UniformArmor>(true))
         {
-            foreach (UniformArmor armour in candidate.GetComponentsInChildren<UniformArmor>(true))
-            {
-                if (armour == null || !seen.Add(armour)) continue;
-                if (armour.GetComponent<LpArmourPiece>() != null) continue;
-                if (!string.Equals(armour.gameObject.name, entry.Replace, StringComparison.OrdinalIgnoreCase)) continue;
-                armour.PrimarySabotRha = entry.Ke * LpConfig.ArmorScale;
-                armour.PrimaryHeatRha = entry.Ce * LpConfig.ArmorScale;
-                armour.SecondarySabotRha = armour.PrimarySabotRha;
-                armour.SecondaryHeatRha = armour.PrimaryHeatRha;
-                armour.AngleMatters = entry.AngleMatters;
-                edited++;
-            }
+            if (armour == null) continue;
+            if (armour.GetComponent<LpArmourPiece>() != null) continue;
+            if (!string.Equals(armour.gameObject.name, entry.Replace, StringComparison.OrdinalIgnoreCase)) continue;
+            LpArmourEdited prior = armour.GetComponent<LpArmourEdited>();
+            if (prior != null && prior.Piece == entry.Piece) continue;
+            armour.PrimarySabotRha = entry.Ke * LpConfig.ArmorScale;
+            armour.PrimaryHeatRha = entry.Ce * LpConfig.ArmorScale;
+            armour.SecondarySabotRha = armour.PrimarySabotRha;
+            armour.SecondaryHeatRha = armour.PrimaryHeatRha;
+            armour.AngleMatters = entry.AngleMatters;
+            LpArmourEdited marker = armour.GetComponent<LpArmourEdited>() ?? armour.gameObject.AddComponent<LpArmourEdited>();
+            marker.Piece = entry.Piece;
+            edited++;
         }
         if (edited == 0) MelonLogger.Warning("[L2A7V][dm-armour] donor_edit target '" + entry.Replace + "' not found; vanilla values kept");
         return edited;
@@ -369,7 +380,7 @@ public static class LpArmourBuilder
         return mesh;
     }
 
-    private static int RetireDonors(HashSet<string> existing, List<RaycastColliderGroup> groups, LpArmourSpec spec)
+    private static int RetireDonors(HashSet<string> existing, List<RaycastColliderGroup> groups, LpArmourSpec spec, HashSet<string> retiredNames)
     {
         int count = 0;
         HashSet<string> completed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -381,8 +392,11 @@ public static class LpArmourBuilder
             .Distinct().ToList();
         foreach (LpArmourSpec.Entry entry in spec.Entries)
         {
-            if (entry.Drawn || entry.Replace == "-" || entry.Replace.Length == 0 || !completed.Add(entry.Replace)) continue;
-            if (!existing.Contains(entry.Piece)) continue;
+            if (entry.Drawn || entry.Keep || entry.Edit || entry.Replace == "-" || entry.Replace.Length == 0 || !completed.Add(entry.Replace)) continue;
+            // A retire row claims a donor plate an imported mesh already covers,
+            // so it has no piece of its own to wait for. Every other mode only
+            // retires once its replacement actually exists.
+            if (!entry.Retire && !existing.Contains(entry.Piece)) continue;
             List<Component> matches = candidates
                 .Where(a => string.Equals(a.gameObject.name, entry.Replace, StringComparison.OrdinalIgnoreCase))
                 .ToList();
@@ -401,11 +415,107 @@ public static class LpArmourBuilder
                 }
                 foreach (Collider collider in colliders) UnityEngine.Object.Destroy(collider);
                 UnityEngine.Object.Destroy(donor);
+                retiredNames.Add(donor.gameObject.name);
                 count++;
             }
         }
         return count;
     }
+
+    // One game run has to prove the same thing the offline probe proves: no
+    // donor exterior plate is left carrying a vanilla number, and every piece
+    // we spawned lands on the rig-space centre the OBJ says it should.
+    private static void Audit(GameObject unitRoot, Transform rig, LpArmourSpec spec, int retired, HashSet<string> retiredNames)
+    {
+        List<string> keep = spec.Entries.Where(e => e.Keep).Select(e => e.Replace).ToList();
+        Matrix4x4 worldToRig = rig.worldToLocalMatrix;
+        int ours = 0, edited = 0, kept = 0, interior = 0, crew = 0, gone = 0, interiorHeavy = 0, modules = 0;
+        float interiorKe = 0f, interiorCe = 0f;
+        List<string> unclaimed = new List<string>();
+        StringBuilder detail = new StringBuilder();
+        foreach (IArmor armour in unitRoot.GetComponentsInChildren<IArmor>(true))
+        {
+            if (armour == null || armour.Transform == null) continue;
+            Component component = (Component)armour;
+            string name = component.gameObject.name;
+            // Destroy is deferred to the end of the frame, so a retired plate
+            // is still enumerable here; the name set is what tells it apart
+            // from a plate nobody ever claimed.
+            if (component.GetComponent<LpArmourPiece>() == null && retiredNames.Contains(name)) { gone++; continue; }
+            string path = HierarchyPath(component.transform, unitRoot.transform);
+            float ke = armour is UniformArmor uniform ? uniform.PrimarySabotRha : armour.SabotRha;
+            float ce = armour is UniformArmor heat ? heat.PrimaryHeatRha : armour.HeatRha;
+            string bucket;
+            if (component.GetComponent<LpArmourPiece>() != null) { bucket = "ours"; ours++; }
+            else if (component.GetComponent<LpModuleZone>() != null) { bucket = "module"; modules++; }
+            else if (component.GetComponent<LpArmourEdited>() != null) { bucket = "edited"; edited++; }
+            else if (keep.Any(p => name.StartsWith(p, StringComparison.OrdinalIgnoreCase))) { bucket = "kept"; kept++; }
+            else if (IsCrew(path, name)) { bucket = "crew"; crew++; }
+            else if (IsInterior(path)) { bucket = "interior"; interior++; interiorKe += ke; interiorCe += ce; if (ke >= 25f || ce >= 25f) interiorHeavy++; }
+            else { bucket = "UNCLAIMED"; unclaimed.Add(path + " KE=" + ke.ToString("0.#", CultureInfo.InvariantCulture) + " CE=" + ce.ToString("0.#", CultureInfo.InvariantCulture)); }
+
+            if (bucket == "ours")
+            {
+                Collider collider = component.GetComponent<Collider>();
+                MeshFilter filter = component.GetComponent<MeshFilter>();
+                string boxText = "no bounds";
+                if (collider != null && filter != null && filter.sharedMesh != null)
+                {
+                    Bounds local = filter.sharedMesh.bounds;
+                    Matrix4x4 toRig = worldToRig * component.transform.localToWorldMatrix;
+                    Vector3 min = new Vector3(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
+                    Vector3 max = new Vector3(float.NegativeInfinity, float.NegativeInfinity, float.NegativeInfinity);
+                    for (int i = 0; i < 8; i++)
+                    {
+                        Vector3 corner = toRig.MultiplyPoint3x4(new Vector3(
+                            (i & 1) == 0 ? local.min.x : local.max.x,
+                            (i & 2) == 0 ? local.min.y : local.max.y,
+                            (i & 4) == 0 ? local.min.z : local.max.z));
+                        min = Vector3.Min(min, corner);
+                        max = Vector3.Max(max, corner);
+                    }
+                    Vector3 centre = (min + max) * 0.5f;
+                    Vector3 size = max - min;
+                    boxText = string.Format(CultureInfo.InvariantCulture, "rig c({0:+0.00;-0.00},{1:+0.00;-0.00},{2:+0.00;-0.00}) s({3:0.00},{4:0.00},{5:0.00})",
+                        centre.x, centre.y, centre.z, size.x, size.y, size.z);
+                }
+                detail.AppendLine("[L2A7V][dm-audit] ours " + name + " " + boxText
+                    + " KE=" + ke.ToString("0.#", CultureInfo.InvariantCulture)
+                    + " CE=" + ce.ToString("0.#", CultureInfo.InvariantCulture)
+                    + " collider=" + (collider != null && collider.enabled) + " active=" + component.gameObject.activeInHierarchy);
+            }
+            else if (bucket == "interior" && (ke >= 25f || ce >= 25f))
+            {
+                detail.AppendLine("[L2A7V][dm-audit] interior " + name
+                    + " KE=" + ke.ToString("0.#", CultureInfo.InvariantCulture)
+                    + " CE=" + ce.ToString("0.#", CultureInfo.InvariantCulture));
+            }
+        }
+        MelonLogger.Msg("[L2A7V][dm-audit] census on '" + unitRoot.name + "': ours=" + ours + " module=" + modules + " edited=" + edited
+            + " kept=" + kept + " interior=" + interior + " crew=" + crew + " retired=" + gone + "/" + retired
+            + " UNCLAIMED=" + unclaimed.Count);
+        MelonLogger.Msg("[L2A7V][dm-audit] donor interior armour still alive: " + interior
+            + " piece(s), " + interiorHeavy + " of them >=25 mm, summed KE=" + interiorKe.ToString("0.#", CultureInfo.InvariantCulture)
+            + " CE=" + interiorCe.ToString("0.#", CultureInfo.InvariantCulture) + " mm (expected 0 after the WT interior swap; module zones carry the resistance instead)");
+        foreach (string line in unclaimed) MelonLogger.Error("[L2A7V][dm-audit] UNCLAIMED donor armour " + line);
+        if (unclaimed.Count == 0) MelonLogger.Msg("[L2A7V][dm-audit] no donor exterior plate keeps a vanilla value");
+        MelonLogger.Msg(detail.ToString());
+    }
+
+    private static string HierarchyPath(Transform piece, Transform root)
+    {
+        StringBuilder builder = new StringBuilder(piece.name);
+        for (Transform t = piece.parent; t != null && t != root; t = t.parent) builder.Insert(0, t.name + "/");
+        return builder.ToString();
+    }
+
+    private static bool IsCrew(string path, string name) =>
+        name.StartsWith("hitzone", StringComparison.OrdinalIgnoreCase) || path.IndexOf("swat:", StringComparison.OrdinalIgnoreCase) >= 0;
+
+    private static bool IsInterior(string path) =>
+        path.IndexOf("LEO2_aar_", StringComparison.OrdinalIgnoreCase) >= 0
+        || path.IndexOf("TURRET FLOOR COLLIDERS", StringComparison.OrdinalIgnoreCase) >= 0
+        || path.IndexOf("LEO2_int", StringComparison.OrdinalIgnoreCase) >= 0;
 
     private static HashSet<string> ExistingPieces(Transform scope)
     {
@@ -446,10 +556,10 @@ public static class LpArmourBuilder
             g.name.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0);
         if (group == null) return null;
         string suffix = kind == "Hull" ? "hull" : "turret";
-        return group.transform.Find("LEO2_aar_" + suffix)
-            ?? group.transform.Find("LEO2_armour_" + suffix)
-            ?? group.transform.Find("AAR")
+        return group.transform.Find("LEO2_armour_" + suffix)
+            ?? group.transform.Find("LEO2_aar_" + suffix)
             ?? group.transform.Find("ARMOR")
+            ?? group.transform.Find("AAR")
             ?? group.transform;
     }
 
@@ -462,14 +572,36 @@ public static class LpArmourBuilder
         return rig.Find("hull/turret/mantlet");
     }
 
-    private static Vector3 Anchor(LpArmourSpec.Entry entry)
+    // The armour must land exactly where the visible art lands, so it rides
+    // the same pivot LpVisual.MakePivot built rather than the drive bone.
+    private static Transform ArtPivot(GameObject root, string group)
     {
-        // Raw armour is already in turret-pivot space. Visible OBJ geometry is
-        // in rig space; the imported hull also has the visual pivot offset.
-        // Subtract each pivot exactly once before baking rig -> bone.
-        if (entry.Piece.StartsWith("ex_armor_", StringComparison.OrdinalIgnoreCase))
-            return entry.Group == "Hull" ? LpConfig.Offset : LpConfig.TurretAxis;
-        return entry.Group == "Turret" ? LpConfig.TurretAxis : entry.Group == "Gun" ? LpConfig.GunAxis : Vector3.zero;
+        string name = group == "Hull" ? "L2A7V_HullPivot"
+            : group == "Gun" ? "L2A7V_GunPivot"
+            : "L2A7V_TurretPivot";
+        return root.GetComponentsInChildren<Transform>(true).FirstOrDefault(t => t != null && t.name == name);
+    }
+
+    private static Vector3 ArtAnchor(string group)
+    {
+        if (group == "Turret") return LpConfig.TurretAxis;
+        if (group == "Gun") return LpConfig.GunAxis;
+        return Vector3.zero;
+    }
+
+    // Same frame the armour Spawn bakes through: rig-space vertices multiplied
+    // by this matrix land on the visible art, inside the native collider group.
+    internal static bool TryVisualFrame(GameObject unitRoot, string kind, out Transform parent, out Matrix4x4 rigToParent)
+    {
+        parent = null;
+        rigToParent = Matrix4x4.identity;
+        Transform rig = Rig(unitRoot);
+        Transform pivot = ArtPivot(unitRoot, kind);
+        Transform group = rig == null ? null : GroupRoot(Groups(rig), kind);
+        if (pivot == null || group == null) return false;
+        parent = group;
+        rigToParent = group.worldToLocalMatrix * pivot.localToWorldMatrix * Matrix4x4.Translate(-ArtAnchor(kind));
+        return true;
     }
 
     private static Mesh Bake(string key, Mesh source, Matrix4x4 sourceToBone)
@@ -517,11 +649,15 @@ public static class LpArmourBuilder
                         for (int j = 0; j < vertices.Length; j++) vertices[j] = new Vector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
                         int[] triangles = new int[reader.ReadInt32()];
                         for (int j = 0; j < triangles.Length; j++) triangles[j] = reader.ReadInt32();
-                        Vector3 offset = name.StartsWith("composite_armor_turret_", StringComparison.OrdinalIgnoreCase) ? LpConfig.TurretAxis : Vector3.zero;
+                        // The bin stores export-frame vertices: turret plates
+                        // already had TurretAxis subtracted, everything else is
+                        // plain (rig.z, rig.y, rig.x). Undo both in one step so
+                        // every mesh ends up in true rig space.
+                        Vector3 pivot = name.StartsWith("composite_armor_turret_", StringComparison.OrdinalIgnoreCase) ? LpConfig.TurretAxis : Vector3.zero;
                         for (int j = 0; j < vertices.Length; j++)
                         {
                             Vector3 v = vertices[j];
-                            vertices[j] = new Vector3(v.z + offset.z, v.y, v.x - offset.z);
+                            vertices[j] = new Vector3(v.z + pivot.z, v.y + pivot.y, v.x);
                         }
                         for (int j = 0; j < triangles.Length; j += 3) (triangles[j + 1], triangles[j + 2]) = (triangles[j + 2], triangles[j + 1]);
                         Mesh mesh = new Mesh { name = name, indexFormat = vertices.Length > 65000 ? IndexFormat.UInt32 : IndexFormat.UInt16 };
@@ -555,7 +691,7 @@ public static class LpArmourBuilder
         catch (Exception ex) { _assetError = ex.Message; }
     }
 
-    private static ArmorCodexScriptable Codex(GameObject root, string fragment)
+    internal static ArmorCodexScriptable Codex(GameObject root, string fragment)
     {
         if (Codices.TryGetValue(fragment, out ArmorCodexScriptable cached) && cached != null) return cached;
         ArmorCodexScriptable result = root.GetComponentsInChildren<UniformArmor>(true)

@@ -39,6 +39,10 @@ public sealed class LpModuleSpec
         public float Threshold;
         public float Pressure;
 
+        // Normal RHAe mm; 0/0 = damage zone with no added resistance.
+        public float Ke;
+        public float Ce;
+
         public readonly List<string> Replaces = new List<string>();
         public readonly List<Hook> Hooks = new List<Hook>();
 
@@ -120,6 +124,12 @@ public sealed class LpModuleSpec
             module.Threshold = (float)LpMiniJson.Number(entry, "threshold");
             module.Pressure = (float)LpMiniJson.Number(entry, "pressure");
             if (float.IsNaN(module.Pressure)) module.Pressure = 1f;
+            module.Ke = (float)LpMiniJson.Number(entry, "ke");
+            module.Ce = (float)LpMiniJson.Number(entry, "ce");
+            if (float.IsNaN(module.Ke)) module.Ke = 0f;
+            if (float.IsNaN(module.Ce)) module.Ce = 0f;
+            if (module.Ke < 0f || module.Ce < 0f)
+            { spec.Problems.Add("'" + module.Id + "': ke/ce must not be negative"); continue; }
 
             if (string.IsNullOrEmpty(module.Id) || !ids.Add(module.Id))
             {

@@ -330,6 +330,23 @@ public static class LpModuleBuilder
             dc.SetName(module.Name);
             Configure(dc, module);
             if (collider != null) dc.ComponentCollision = collider;
+            if (module.Ke > 0f || module.Ce > 0f)
+            {
+                UniformArmor armour = go.AddComponent<UniformArmor>();
+                armour.SetName(module.Name);
+                armour.PrimarySabotRha = module.Ke * LpConfig.ArmorScale;
+                armour.PrimaryHeatRha = module.Ce * LpConfig.ArmorScale;
+                armour.SecondarySabotRha = armour.PrimarySabotRha;
+                armour.SecondaryHeatRha = armour.PrimaryHeatRha;
+                armour.ThicknessListed = UniformArmor.ThicknessMode.RHAE;
+                armour.AngleMatters = true;
+                armour.DetonatedObjects = Array.Empty<GameObject>();
+                armour.UndetonatedObjects = Array.Empty<GameObject>();
+                armour.CenterPoint = go.transform;
+                armour.Unit = LpFind.Unit(unitRoot);
+                ArmorCodexScriptable codex = LpArmourBuilder.Codex(unitRoot, "armour steel");
+                if (codex != null) typeof(UniformArmor).GetField("_armorType", Any).SetValue(armour, codex);
+            }
             dc.HealthChanged += delegate (IDestructible source, float percent)
             {
                 MelonLogger.Msg(Tag + " '" + module.Id + "' health " + (percent * 100f).ToString("0") + "%");

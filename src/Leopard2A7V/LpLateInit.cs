@@ -16,6 +16,7 @@ public sealed class LpLateInit : MonoBehaviour
 	private float _next;
 	private bool _weapons;
 	private bool _modules;
+	private bool _interior;
 	private bool _armour;
 	private bool _wiring;
 	private bool _hatches;
@@ -36,15 +37,16 @@ public sealed class LpLateInit : MonoBehaviour
 		}
 		_next = Time.unscaledTime + RetrySeconds;
 		TryStep("weapons", ref _weapons, () => LpWeapons.Apply(base.gameObject));
-		TryStep("armour", ref _armour, () => LpArmourBuilder.Build(base.gameObject));
 		TryStep("modules", ref _modules, () => LpModuleBuilder.Build(base.gameObject));
+		TryStep("interior", ref _interior, () => LpInteriorSwap.Apply(base.gameObject));
+		TryStep("armour", ref _armour, () => LpArmourBuilder.Build(base.gameObject));
 		TryStep("hatches", ref _hatches, () => LpHatches.Bind(base.gameObject));
 		TryStep("smoke", ref _smoke, () => LpSmoke.Apply(base.gameObject));
-		if (_weapons && _armour && _modules && _hatches && _smoke)
+		if (_weapons && _armour && _modules && _interior && _hatches && _smoke)
 		{
 			TryStep("module wiring", ref _wiring, () => LpModuleBuilder.Wire(base.gameObject));
 		}
-		if (_weapons && _armour && _modules && _wiring && _hatches && _smoke)
+		if (_weapons && _armour && _modules && _interior && _wiring && _hatches && _smoke)
 		{
 			_finished = true;
 			base.enabled = false;
@@ -53,7 +55,7 @@ public sealed class LpLateInit : MonoBehaviour
 		if (Time.unscaledTime - _started >= TimeoutSeconds)
 		{
 			_finished = true;
-			MelonLogger.Warning("[L2A7V][init] bounded initialization ended on '" + base.name + "': weapons=" + _weapons + ", armour=" + _armour + ", modules=" + _modules + ", wiring=" + _wiring + ", hatches=" + _hatches + ", smoke=" + _smoke + ". Unresolved donor stages were left untouched.");
+			MelonLogger.Warning("[L2A7V][init] bounded initialization ended on '" + base.name + "': weapons=" + _weapons + ", armour=" + _armour + ", modules=" + _modules + ", interior=" + _interior + ", wiring=" + _wiring + ", hatches=" + _hatches + ", smoke=" + _smoke + ". Unresolved donor stages were left untouched.");
 			base.enabled = false;
 		}
 	}
